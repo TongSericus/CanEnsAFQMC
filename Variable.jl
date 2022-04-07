@@ -26,6 +26,7 @@ struct System
     U::Float64
     kinetic_matrix::Array{Float64,2}
     μ::Float64
+    expβμ::Float64
     ### AFQMC Constants ###
     Δτ::Float64
     L::Int64
@@ -49,7 +50,7 @@ struct System
         auxfield = ((exp(2 * γ - Δτ * U / 2), exp(-2 * γ - Δτ * U / 2)),
                 (exp(-2 * γ - Δτ * U / 2), exp(2 * γ - Δτ * U / 2)))
         return new(
-            Ns, prod(Ns), N, t, U, kinetic_matrix, μ, Δτ, L, auxfield,
+            Ns, prod(Ns), N, t, U, kinetic_matrix, μ, exp(Δτ * L * μ), Δτ, L, auxfield,
             exp(-kinetic_matrix * Δτ/2), exp(-kinetic_matrix * Δτ), inv(exp(-kinetic_matrix * Δτ))
         )
     end
@@ -106,9 +107,19 @@ mutable struct Walker{T1<:MatrixType, T2<:MatrixType}
     update_count::Int64
 end
 
+struct TrialWalker{T1<:MatrixType, T2<:MatrixType}
+    """
+        Walker information for each trial step
+    """
+    weight::Vector{Float64}
+    Q::Vector{T1}
+    D::Vector{T2}
+    T::Vector{T1}
+end
+
 struct WalkerProfile{T<:FloatType}
     """
-        All the (spin-resolved) measurement information carried by a single walker
+        All the (spin-resolved) measurement-related information of a single walker
     """
     weight::Float64
     expβϵ::Vector{T}
@@ -118,7 +129,7 @@ end
 
 mutable struct ConstrainedWalker{T1<:MatrixType, T2<:MatrixType}
     """
-        All the information carried by a single walker
+        All the sampling information carried by a single walker
 
         weight -> weight of the walker
         Pl -> ratio between the weights before and after every update step
@@ -140,6 +151,22 @@ mutable struct Temp{T1<:MatrixType, T2<:MatrixType}
     Q::Vector{T1}
     D::Vector{T2}
     T::Vector{T1}
+end
+
+struct GeneralMeasure
+    ### Momentum distribution constants ###
+    sympts::Vector{Vector{Float64}}
+    npoints::Int64
+    DFTmats::Vector{Matrix{ComplexF64}}
+
+    function GeneralMeasure(
+        system::System, sympts::Vector{Vector{Float64}}, npoints::Int64
+    )
+        rmat = generate_rmat(system)
+        kpath = generate_kpath(sympts, npoints)
+        DFTmats = generate_DFTmat(kpath, rmat)
+        return new(sympts, npoints, DFTmats)
+    end
 end
 
 struct EtgMeasure

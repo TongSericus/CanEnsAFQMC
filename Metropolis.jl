@@ -29,7 +29,7 @@ function initialize_walker_mcmc(system::System, qmc::QMC)
     )
 
     # construct the walker
-    walker = Walker(
+    return walker = Walker(
         [Z[1], Z[2]],
         σfield,
         deepcopy(Q),
@@ -37,11 +37,12 @@ function initialize_walker_mcmc(system::System, qmc::QMC)
         deepcopy(T),
         0
     )
+
 end
 
 function calc_proposal_mcmc(
-    system::System, walker::Walker, 
-    σ::Vector{Int64}, site_index::Int64)
+    system::System, walker::Walker, σ::Vector{Int64}
+    )
     """
     Calculate the statistical weight when the (i,j)th field component is proposed
     Shared with Metropolis
@@ -71,7 +72,12 @@ function calc_proposal_mcmc(
         recursion(system.V, system.N[2], expβϵ[2], false)
     )
     
-    return Z[1], Z[2], (QDT[1][1], QDT[2][1]), (QDT[1][2], QDT[2][2]), (QDT[1][3], QDT[2][3])
+    return TrialWalker(
+        [Z[1], Z[2]], 
+        [QDT[1][1], QDT[2][1]], 
+        [QDT[1][2], QDT[2][2]], 
+        [QDT[1][3], QDT[2][3]]
+    )
 
 end
 
@@ -88,7 +94,7 @@ end
 
 function update_matrices!(
     Q0::Vector{T1}, D0::Vector{T2}, T0::Vector{T1},
-    Q::Tuple{T1, T1}, D::Tuple{T2, T2}, T::Tuple{T1, T1}
+    Q::Vector{T1}, D::Vector{T2}, T::Vector{T1}
     ) where {T1<:MatrixType, T2<:MatrixType}
     
     Q0[1] .= Q[1]
@@ -118,20 +124,20 @@ function propagate!_mcmc(
     # propose a flip at the jth site of the ith time slice
     flip!(walker.auxfield, field_index[2], field_index[1])
     # calculate the corresponding weight (partition function)
-    proposal = calc_proposal_mcmc(
-        system, walker, walker.auxfield[:, field_index[1]], field_index[2]
-        )
+    trialwalker = calc_proposal_mcmc(
+        system, walker, walker.auxfield[:, field_index[1]]
+    )
     # weight ratio between the new and the old configurations
-    ratio = (proposal[1] / walker.weight[1]) * (proposal[2] / walker.weight[2])
+    ratio = (trialwalker.weight[1] / walker.weight[1]) * (trialwalker.weight[2] / walker.weight[2])
 
     # heat bath sampling
     if rand() < abs(ratio) / (1 + abs(ratio))
         # accept the proposal, update weights
-        walker.weight .= [proposal[1], proposal[2]]
+        walker.weight .= [trialwalker.weight[1], trialwalker.weight[2]]
         # update the temporal matrix decompositions
         update_matrices!(temp.Q, temp.D, temp.T,
-                        proposal[3], proposal[4], proposal[5]
-                        )
+                        trialwalker.Q, trialwalker.D, trialwalker.T
+        )
     else
         # reject the proposal, rollback the change
         flip!(walker.auxfield, field_index[2], field_index[1])
@@ -174,15 +180,15 @@ function propagate!_replica(
     flip!(walker1.auxfield, field_index[2], field_index[1])
     flip!(walker2.auxfield, field_index[2], field_index[1])
     # calculate the corresponding weight (partition function)
-    proposal1 = calc_proposal_mcmc(
+    trailwalker1 = calc_proposal_mcmc(
         system, walker1, walker1.auxfield[:, field_index[1]], field_index[2]
         )
-    proposal2 = calc_proposal_mcmc(
+    trailwalker2 = calc_proposal_mcmc(
         system, walker2, walker2.auxfield[:, field_index[1]], field_index[2]
         )
     # weight ratio between the new and the old configurations
-    ratio1 = (proposal1[1] / walker1.weight[1]) * (proposal1[2] / walker1.weight[2])
-    ratio2 = (proposal2[1] / walker2.weight[1]) * (proposal2[2] / walker2.weight[2])
+    ratio1 = (trailwalker1.weight[1] / walker1.weight[1]) * (trailwalker1.weight[2] / walker1.weight[2])
+    ratio2 = (trailwalker2.weight[1] / walker2.weight[1]) * (trailwalker2.weight[2] / walker2.weight[2])
 
     ### heat bath sampling ###
     prob = [1, ratio1, ratio2, ratio1 * ratio2]
@@ -201,31 +207,31 @@ function propagate!_replica(
         flip!(walker2.auxfield, field_index[2], field_index[1])
     elseif config_index == 2
         # accept flipping walker 1, reject flipping walker 2
-        walker1.weight .= [proposal1[1], proposal1[2]]
+        walker1.weight .= [trailwalker1.weight[1], trailwalker1.weight[2]]
         update_matrices!(
             temp1.Q, temp1.D, temp1.T,
-            proposal1[3], proposal1[4], proposal1[5]
+            trialwalker1.Q, trialwalker1.D, trialwalker1.T
         )
         flip!(walker2.auxfield, field_index[2], field_index[1])
     elseif config_index == 3
         # accept flipping walker 2, reject flipping walker 1
         flip!(walker1.auxfield, field_index[2], field_index[1])
-        walker2.weight .= [proposal2[1], proposal2[2]]
+        walker2.weight .= [trailwalker2.weight[1], trailwalker2.weight[2]]
         update_matrices!(
             temp2.Q, temp2.D, temp2.T,
-            proposal2[3], proposal2[4], proposal2[5]
+            trialwalker2.Q, trialwalker2.D, trialwalker2.T
         )
     elseif config_index == 4
         # accept both proposals
-        walker1.weight .= [proposal1[1], proposal1[2]]
+        walker1.weight .= [trailwalker1.weight[1], trailwalker1.weight[2]]
         update_matrices!(
             temp1.Q, temp1.D, temp1.T,
-            proposal1[3], proposal1[4], proposal1[5]
+            trialwalker1.Q, trialwalker1.D, trialwalker1.T
         )
-        walker2.weight .= [proposal2[1], proposal2[2]]
+        walker2.weight .= [trailwalker2.weight[1], trailwalker2.weight[2]]
         update_matrices!(
             temp2.Q, temp2.D, temp2.T,
-            proposal2[3], proposal2[4], proposal2[5]
+            trialwalker2.Q, trialwalker2.D, trialwalker2.T
         )
     end
 

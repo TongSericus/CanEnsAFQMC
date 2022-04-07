@@ -1,12 +1,13 @@
 using LinearAlgebra, Statistics, Random, Printf, StaticArrays
 const FloatType = Union{Float64, ComplexF64, BigFloat, Complex{BigFloat}}
-const MatrixType = Union{Matrix{Float64}, Diagonal{Float64, Vector{Float64}}}
+const MatrixType = Union{Matrix{Float64}, Matrix{ComplexF64}, Diagonal{Float64, Vector{Float64}}, Diagonal{ComplexF64, Vector{ComplexF64}}}
 
 include("Variable.jl")
 include("MatrixGenerator.jl")
 include("Recursion.jl")
 include("Metropolis.jl")
 include("ConstraintPath.jl")
+include("GrandCanonical.jl")
 include("MonteCarlo.jl")
 include("Measure.jl")
 include("QoL.jl")
@@ -14,20 +15,20 @@ include("QoL.jl")
 system = System(
     ### Model Constants ###
     # number of sites in each dimension (NsX, NsY)
-    (6, 1),
+    (4, 4),
     # number of spin-ups/downs (nup, ndn)
-    (3, 3),
+    (8, 8),
     # hopping constant t
     1.0,
     # on-site repulsion constant U
-    1.0,
+    2.0,
     # chemical potential used for the GCE calculations
-    0.0,
+    1.0,
     ### AFQMC Constants ###
     # imaginary time interval (Δτ)
-    0.005,
+    0.02,
     # number of imaginary time slices L = β / Δτ
-    200
+    500
 )
 qmc = QMC(
     # number of processors (not working for now)
@@ -58,6 +59,27 @@ qmc = QMC(
     1e-3
 )
 
+const floatπ = convert(Float64, π)
+measure = GeneralMeasure(
+    system,
+    ### Momentum distribution ###
+    # symmetry points
+    [[0.0, 0.0], [floatπ, floatπ]],
+    # discrete points measured between symmetry points
+    30
+)
+
+println("System size:", system.V, " U:", system.U)
+println("Beta:", system.L * system.Δτ, " tau:", system.Δτ)
+
+nk_array = mc_metropolis_gce(system, qmc, measure)
+nk_mean = mean(nk_array, dims = 2)
+nk_error = std(nk_array, dims = 2) / sqrt(qmc.nsamples)
+for i = 1 : length(measure.DFTmats)
+    println(nk_mean[i], "    ", nk_error[i])
+end
+
+"""
 println("System size:", system.V, " U:", system.U)
 println("Beta:", system.L * system.Δτ, " tau:", system.Δτ)
 
@@ -81,3 +103,4 @@ for j = 1 : length(etg.k)
         println(i, "    ", j, "    ", P2n[i, j], "    ", P2n_error[i, j])
     end
 end
+"""

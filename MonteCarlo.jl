@@ -50,7 +50,7 @@ function sweep!(system::System, qmc::QMC, walker::Walker, temp::Temp)
 
         # periodically calibrate the walker
         walker.update_count += 1
-        if update_count == qmc.update_interval
+        if walker.update_count == qmc.update_interval
             calibrate!_mcmc(system, qmc, walker, l)
             walker.update_count = 0
         end
@@ -62,23 +62,28 @@ function mc_metropolis(system::System, qmc::QMC)
 
     walker = initialize_walker_mcmc(system, qmc)
     temp = Temp(
-            deepcopy(walker1.Q),
-            deepcopy(walker1.D),
-            deepcopy(walker1.T)
+            deepcopy(walker.Q),
+            deepcopy(walker.D),
+            deepcopy(walker.T)
         )
 
     ### Monte Carlo Sampling ###
+    nk_array = zeros(Float64, length(measure.DFTmats), qmc.nsamples)
     ####### Warm-up Step #######
-    for i = qmc.nwarmups
+    for i = 1 : qmc.nwarmups
         # sweep the entire space-time lattice
         sweep!(system, qmc, walker, temp)
     end
     ####### Measure Step #######
-    for i = qmc.nsamples
-        sweep!(system, qmc, walker, temp)
-        measurement_mcmc(system, walker)
+    for i = 1 : qmc.nsamples
+        for j = 1 : 3
+            sweep!_gce(system, qmc, walker, temp)
+        end
+        nk_array[:, i] = measurement_mcmc_gce(system, measure, walker)
     end
 
+    return nk_array
+    
 end
 
 function sweep!_replica(
@@ -141,7 +146,7 @@ function mc_replica(system::System, qmc::QMC, etg::EtgMeasure)
 
     ### Monte Carlo Sampling ###
     ####### Warm-up Step #######
-    for i = qmc.nwarmups
+    for i = 1 : qmc.nwarmups
         # sweep the entire space-time lattice
         sweep!_replica(system, qmc, walker1, walker2, temp1, temp2)
     end

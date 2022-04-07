@@ -1,15 +1,15 @@
 """
     Measure Observables
 """
-function construct_walker_profile(system::System, walker::Walker)
+function construct_walker_profile(walker::Walker)
     walker_eigen = (
             eigen(walker.D[1] * walker.T[1] * walker.Q[1], sortby = abs),
             eigen(walker.D[2] * walker.T[2] * walker.Q[2], sortby = abs)
-        )
+    )
     P = (
             walker.Q[1] * walker_eigen[1].vectors,
             walker.Q[2] * walker_eigen[2].vectors
-        )
+    )
     return (
             WalkerProfile(walker.weight[1], walker_eigen[1].values, P[1], inv(P[1])),
             WalkerProfile(walker.weight[2], walker_eigen[2].values, P[2], inv(P[2]))
@@ -23,21 +23,27 @@ function measurement_mcmc(system::System, walker::Walker)
     """
     # construct the density matrix
     walker_eigen = (
-            eigen(walker.D[1] * walker.T[1] * walker.Q[1], sortby = abs),
-            eigen(walker.D[2] * walker.T[2] * walker.Q[2], sortby = abs)
-        )
+        eigen(walker.D[1] * walker.T[1] * walker.Q[1], sortby = abs),
+        eigen(walker.D[2] * walker.T[2] * walker.Q[2], sortby = abs)
+    )
     ni = (
         recursion(system.V, system.N[1], walker_eigen[1].values, true),
         recursion(system.V, system.N[2], walker_eigen[2].values, true)
-        )
+    )
     P = (
         walker.Q[1] * walker_eigen[1].vectors,
         walker.Q[2] * walker_eigen[2].vectors
-        )
-    G = (
-        transpose(inv(P[1])) * Diagonal(ni[1]) * transpose(P[1]),
-        transpose(inv(P[2])) * Diagonal(ni[2]) * transpose(P[2])
     )
+    G = (
+        P[1] * Diagonal(ni[1]) * inv(P[1]),
+        P[2] * Diagonal(ni[2]) * inv(P[2])
+    )
+
+    # measure momentum distribution
+    nk = measure_momentum_dist(system, measure, G)
+
+    return real(nk[1] .+ nk[2]) / 2
+    
 end
 
 ###### Energy ######
@@ -64,36 +70,89 @@ function measure_energy(
 end
 
 ###### Momentum Distribution ######
-function DFT_matrix(k::Vector{Float64}, r_matrix::Matrix{Vector{Float64}})
+function generate_kpath(
+    sympts::Vector{Vector{Float64}}, npoints::Int64
+    )
     """
-    Discrete Fourier transform matrix
+    Generate a discrete point line along the given path
+
+    # Arguments
+    sympts -> symmetry points in the reciprocal space, for example,
+            [[0,0], [π,π], [π,0], [0,0]]
+    npoints -> number of points between two symmetry points
     """
-    DFT_matrix = similar(r_matrix, ComplexF64)
-    fill!(DFT_matrix, 0)
-    for (i, r) in enumerate(r_matrix)
-        DFT_matrix[i] = exp(im * dot(k, r))
+    kpath = Vector{Vector{Float64}}()
+    fill!(kpath, [0, 0])
+    points_count = 1
+    push!(kpath, sympts[1])
+    for i = 2 : length(sympts)
+        intervalx = (sympts[i][1] - sympts[i - 1][1]) / npoints
+        intervaly = (sympts[i][2] - sympts[i - 1][2]) / npoints
+        for j = 1 : npoints
+            points_count += 1
+            push!(kpath, kpath[points_count - 1] + [intervalx, intervaly])
+        end
     end
 
-    return DFT_matrix
+    return kpath
+
+end
+
+function generate_rmat(system::System)
+    """
+    Generate the r1 - r2 matrix that would be used in the momentum distribution calculations
+    """
+    rmat = [Vector{Int64}(undef, 2) for _ = 1 : system.V ^ 2]
+    fill!(rmat, [0, 0])
+    rmat = reshape(rmat, (system.V, system.V))
+
+    for r1 = 1 : system.V
+        for r2 = 1 : r1 - 1
+            r1x = (r1 - 1) % system.Ns[1] + 1
+            r1y = (r1 - r1x) / system.Ns[1] + 1
+            r2x = (r2 - 1) % system.Ns[1] + 1
+            r2y = (r2 - r2x) / system.Ns[1] + 1
+            rmat[r1, r2] = [r1x - r2x, r1y - r2y]
+            rmat[r2, r1] = - rmat[r1, r2]
+        end
+    end
+
+    return rmat
+
+end
+
+function generate_DFTmat(kpath::Vector{Vector{Float64}}, rmat::Matrix{Vector{Int64}})
+    """
+    Generate the discrete Fourier transform matrices
+    """
+    DFTmats = Vector{Matrix{ComplexF64}}()
+    for k in kpath
+        DFTmat = similar(rmat, ComplexF64)
+        fill!(DFTmat, 0.0)
+        for (i, r) in enumerate(rmat)
+            DFTmat[i] = exp(im * dot(k, r))
+        end
+        push!(DFTmats, DFTmat)
+    end
+                                                                                                                                                                                               
+    return DFTmats
 
 end
 
 function measure_momentum_dist(
-    system::System, G::Tuple{Matrix{T1}, Matrix{T2}},
-    kpath::Vector{Vector{Float64}}
+    system::System, measure::GeneralMeasure, G::Tuple{Matrix{T1}, Matrix{T2}}
     ) where {T1<:FloatType, T2<:FloatType}
     """
     Measure the momentum distribution along a given symmetry path
-    kpath -> a symmetry path in the reciprocal lattice. For instance,
-        [(0,0), (π,π), (π,0), (0,0)]
+    kpath -> a symmetry path in the reciprocal lattice
     """
     nk = (
-        zeros(ComplexF64, length(kpath)), 
-        zeros(ComplexF64, length(kpath))
+        zeros(ComplexF64, length(measure.DFTmats)),
+        zeros(ComplexF64, length(measure.DFTmats))
         )
-    for (i, k) in enumerate(kpath)
-        nk[1][i] = sum(DFT_matrix(k, system.r_matrix) .* G[1])
-        nk[2][i] = sum(DFT_matrix(k, system.r_matrix) .* G[2])
+    for (i, DFTmat) in enumerate(measure.DFTmats)
+        nk[1][i] = sum(DFTmat .* G[1]) / system.V
+        nk[2][i] = sum(DFTmat .* G[2]) / system.V
     end
 
     return nk
@@ -245,7 +304,7 @@ end
 function measure_renyi2_entropy(
     system::System, etg::EtgMeasure, spin::Int64,
     walker1::WalkerProfile, walker2::WalkerProfile
-    ) where {T1<:FloatType, T2<:FloatType}
+    )
     """
     Compute the regular and particle-number-resolved Renyi-2 entropies 
     for a pair of replica samples
