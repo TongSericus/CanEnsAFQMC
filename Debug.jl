@@ -28,16 +28,16 @@ system = System(
     # imaginary time interval (Δτ)
     0.02,
     # number of imaginary time slices L = β / Δτ
-    500
+    100
 )
 qmc = QMC(
     # number of processors (not working for now)
     1,
     ### MCMC (Metropolis) ###
     # number of warm-up runs
-    500,
+    5,
     # number of Metropolis samples per processor
-    8000,
+    8,
     # number of Metropolis samples (not working for now)
     1,
     ### Branching Ramdom Walk ###
@@ -69,10 +69,11 @@ measure = GeneralMeasure(
     30
 )
 
+
 println("System size:", system.V, " U:", system.U)
 println("Beta:", system.L * system.Δτ, " tau:", system.Δτ)
 
-nk_array = mc_metropolis_gce(system, qmc, measure)
+nk_array = mc_metropolis(system, qmc, measure)
 nk_mean = mean(nk_array, dims = 2)
 nk_error = std(nk_array, dims = 2) / sqrt(qmc.nsamples)
 for i = 1 : length(measure.DFTmats)

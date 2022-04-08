@@ -13,11 +13,11 @@ function construct_walker_profile(walker::Walker)
     return (
             WalkerProfile(walker.weight[1], walker_eigen[1].values, P[1], inv(P[1])),
             WalkerProfile(walker.weight[2], walker_eigen[2].values, P[2], inv(P[2]))
-        )
+    )
 
 end
 
-function measurement_mcmc(system::System, walker::Walker)
+function measurement_mcmc(system::System, measure::GeneralMeasure, walker::Walker)
     """
     Measurements in MCMC
     """
@@ -43,7 +43,7 @@ function measurement_mcmc(system::System, walker::Walker)
     nk = measure_momentum_dist(system, measure, G)
 
     return real(nk[1] .+ nk[2]) / 2
-    
+
 end
 
 ###### Energy ######

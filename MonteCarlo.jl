@@ -58,14 +58,14 @@ function sweep!(system::System, qmc::QMC, walker::Walker, temp::Temp)
 
 end
 
-function mc_metropolis(system::System, qmc::QMC)
+function mc_metropolis(system::System, qmc::QMC, measure::GeneralMeasure)
 
     walker = initialize_walker_mcmc(system, qmc)
     temp = Temp(
             deepcopy(walker.Q),
             deepcopy(walker.D),
             deepcopy(walker.T)
-        )
+    )
 
     ### Monte Carlo Sampling ###
     nk_array = zeros(Float64, length(measure.DFTmats), qmc.nsamples)
@@ -77,13 +77,13 @@ function mc_metropolis(system::System, qmc::QMC)
     ####### Measure Step #######
     for i = 1 : qmc.nsamples
         for j = 1 : 3
-            sweep!_gce(system, qmc, walker, temp)
+            sweep!(system, qmc, walker, temp)
         end
-        nk_array[:, i] = measurement_mcmc_gce(system, measure, walker)
+        nk_array[:, i] = measurement_mcmc(system, measure, walker)
     end
 
     return nk_array
-    
+
 end
 
 function sweep!_replica(
@@ -137,12 +137,12 @@ function mc_replica(system::System, qmc::QMC, etg::EtgMeasure)
             deepcopy(walker1.Q),
             deepcopy(walker1.D),
             deepcopy(walker1.T)
-        )
+    )
     temp2 = Temp(
             deepcopy(walker2.Q),
             deepcopy(walker2.D),
             deepcopy(walker2.T)
-        )
+    )
 
     ### Monte Carlo Sampling ###
     ####### Warm-up Step #######

@@ -154,3 +154,25 @@ function second_order_corr(
     return nij
 
 end
+
+### Projection method for benchmark purposes ###
+function canonical_projection(
+    Ns::Int64, N::Int64, expβϵ::Array{T,1}, FLAG_OccNum::Bool
+) where {T<:FloatType}
+
+    φ = [2 * π * m / Ns for m = 1 : Ns]
+    expβμ = (abs(expβϵ[Ns - N + 1]) +
+            abs(expβϵ[Ns - N])) / 2     # chemical potential
+
+    η = [prod(1 .+ exp(im * φ[m]) / expβμ * expβϵ) for m = 1 : Ns]
+    Z = sum(exp.(-im * φ) .^ N .* η) / Ns * expβμ ^ N
+
+    # skip the occupation number projection
+    FLAG_OccNum || return real(Z)
+
+    n = [sum(exp.(im * φ) / expβμ * expβϵ[i] ./ (1 .+ exp.(im * φ) / expβμ * expβϵ[i]) .* 
+    exp.(-im * φ) .^ N .* η) * expβμ ^ N / Ns / Z for i = 1 : Ns]
+
+    return n
+
+end
