@@ -1,42 +1,6 @@
 """
     Constraint Path Sampling
 """
-
-function initialize_walker_list(system::System, qmc::QMC)
-    """
-    Initialize an ensemble of identical walkers
-    """
-    walker_list = Vector{Walker}()
-
-    σfield = zeros(Int64, system.V, system.L)
-    Q, D, T = full_propagation(σfield, system, qmc)
-    # assume the trial propagator does not distinguish spins
-    expβϵ = (
-        eigvals(D[1] * T[1] * Q[1], sortby = abs),
-        eigvals(D[2] * T[2] * Q[2], sortby = abs)
-        )
-    Z = (
-        recursion(system.V, system.N[1], expβϵ[1], false),
-        recursion(system.V, system.N[2], expβϵ[2], false)
-        )
-
-    walker = Walker(
-        [1.0, 1.0],
-        [Z[1], Z[2]],
-        σfield,
-        deepcopy(Q),
-        deepcopy(D),
-        deepcopy(T)
-    )
-
-    for i = 1 : qmc.ntot_walkers
-        push!(walker_list, deepcopy(walker))
-    end
-
-    return walker_list
-
-end
-
 function calc_proposal_constrained(
     system::System, walker::Walker, 
     σ::Vector{Int64}, site_index::Int64)
@@ -76,20 +40,6 @@ function calc_proposal_constrained(
     else
         return Z[1], Z[2]
     end
-
-end
-
-function update_walker_matrices!(
-    walker::Walker, 
-    Q::Vector{T1}, D::Vector{T2}, T::Vector{T1}
-    ) where {T1<:MatrixType, T2<:MatrixType}
-    
-    walker.Q[1] .= Q[1]
-    walker.Q[2] .= Q[2]
-    walker.D[1] .= D[1]
-    walker.D[2] .= D[2]
-    walker.T[1] .= T[1]
-    walker.T[2] .= T[2]
 
 end
 
@@ -148,29 +98,6 @@ function propagate!_constrained(
     else
         walker.weight .= [0.0, 0.0]
     end
-
-end
-
-function move!_constrained(walker::Walker, system::System)
-    """
-    Move the walker to the next time slice,
-    i.e. calculate B = Bl...B1 * BT...BT * (BT)^-1
-    """
-    QRCP_update!(walker.Q[1], walker.D[1], walker.T[1], system.BT_inv, 'R')
-    QRCP_update!(walker.Q[2], walker.D[2], walker.T[2], system.BT_inv, 'R')
-
-end
-
-function calibrate!(system::System, qmc::QMC, walker::Walker, time_index::Int64)
-    """
-    Q, D, T matrices need to be recalculated periodically
-
-    # Arguments
-    time_index -> time slice index
-    """
-    shifted_field = circshift(walker.auxfield, (0, -time_index))
-    Q, D, T = full_propagation(shifted_field, system, qmc)
-    update_walker_matrices!(walker, Q, D, T)
 
 end
 

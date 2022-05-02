@@ -22,7 +22,7 @@ function initialize_walker_gce(system::System, qmc::QMC)
     )
 
     # construct the walker
-    return walker = Walker(
+    return Walker(
         [Z[1], Z[2]],
         σfield,
         deepcopy(Q),
@@ -75,7 +75,7 @@ end
 
 function propagate!_gce(
     system::System, walker::Walker, 
-    field_index::Tuple{Int64, Int64}, temp::Temp
+    field_index::Tuple{Int64, Int64}, temp::MatDecomp
     )
     """
     Propagation at the jth site of the ith time slice
@@ -97,7 +97,7 @@ function propagate!_gce(
     if rand() < abs(ratio) / (1 + abs(ratio))
         # accept the proposal, update weights
         walker.weight .= [trialwalker.weight[1], trialwalker.weight[2]]
-        # update the temporal matrix decompositions
+        # update the oral matrix decompositions
         update_matrices!(temp.Q, temp.D, temp.T,
                         trialwalker.Q, trialwalker.D, trialwalker.T
         )
@@ -145,7 +145,7 @@ end
     GCE Monte Carlo Simulator
 """
 
-function sweep!_gce(system::System, qmc::QMC, walker::Walker, temp::Temp)
+function sweep!_gce(system::System, qmc::QMC, walker::Walker, temp::MatDecomp)
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -180,11 +180,11 @@ end
 function mc_metropolis_gce(system::System, qmc::QMC, measure::GeneralMeasure)
 
     walker = initialize_walker_gce(system, qmc)
-    temp = Temp(
-            deepcopy(walker.Q),
-            deepcopy(walker.D),
-            deepcopy(walker.T)
-        )
+    temp = QDT(
+        deepcopy(walker.Q),
+        deepcopy(walker.D),
+        deepcopy(walker.T)
+    )
 
     ### Monte Carlo Sampling ###
     nk_array = zeros(Float64, length(measure.DFTmats), qmc.nsamples)
@@ -195,7 +195,7 @@ function mc_metropolis_gce(system::System, qmc::QMC, measure::GeneralMeasure)
     end
     ####### Measure Step #######
     for i = 1: qmc.nsamples
-        for j = 1 : 3
+        for j = 1 : 2
             sweep!_gce(system, qmc, walker, temp)
         end
         nk_array[:, i] = measurement_mcmc_gce(system, measure, walker)
