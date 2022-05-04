@@ -46,7 +46,6 @@ function QRCP_update(
     else
         @error "direction can only be 'L' or 'R'"
     end
-
 end
 
 ##### Low-rank Update #####
@@ -102,7 +101,6 @@ function QRCP_update_lowrank(
         return Q, D, T
 
     else
-        ArgumentError("direction can only be 'L' or 'R'")
+        @error "direction can only be 'L' or 'R'"
     end
-
 end

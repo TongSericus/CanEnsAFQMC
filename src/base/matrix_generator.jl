@@ -16,7 +16,6 @@ function kinetic_matrix_hubbard1D(Ns::Int64, t::Float64)
     end
 
     return T
-
 end
 
 decode_basis(i::Int64, NsX::Int64) = [(i - 1) % NsX + 1, div(i - 1, NsX) + 1]
@@ -48,11 +47,9 @@ function kinetic_matrix_hubbard2D(NsX::Int64, NsY::Int64, t::Float64)
     end
 
     return T
-    
 end
 
 function auxfield_matrix_hubbard(σ::Vector{Int64}, auxfield::Vector{Vector{Float64}})
-
     nullfield = iszero.(σ)
     plusfield = isone.(σ)
     minusfield = isone.(-σ)
@@ -65,7 +62,6 @@ function auxfield_matrix_hubbard(σ::Vector{Int64}, auxfield::Vector{Vector{Floa
         nullfield
 
     return Diagonal(afmat_up), Diagonal(afmat_dn)
-
 end
 
 function singlestep_matrix(σ::Vector{Int64}, system::System)
@@ -77,7 +73,6 @@ function singlestep_matrix(σ::Vector{Int64}, system::System)
 
     afmat = auxfield_matrix_hubbard(σ, system.auxfield)
     B = [system.Bk * afmat[1] * system.Bk, system.Bk * afmat[2] * system.Bk]
-
 end
 
 function generate_rmat(system::System)
@@ -115,20 +110,6 @@ function generate_DFTmat(
     """
     Generate the discrete Fourier transform matrices
     """
-    if system.Ns[2] == 1
-        # 1D 
-        DFTmats = Vector{Matrix{ComplexF64}}()
-        for k in kpath
-            DFTmat = similar(rmat, ComplexF64)
-            fill!(DFTmat, 0.0)
-            for (i, r) in enumerate(rmat)
-                DFTmat[i] = exp(im * dot(k, r))
-            end
-            push!(DFTmats, DFTmat)
-        end
-        return DFTmats
-    end
-
     DFTmats = Vector{Matrix{ComplexF64}}()
     for k in kpath
         DFTmat = similar(rmat, ComplexF64)
@@ -140,5 +121,4 @@ function generate_DFTmat(
     end
 
     return DFTmats
-
 end

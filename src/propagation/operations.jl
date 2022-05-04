@@ -15,7 +15,6 @@ function full_propagation(
     # Returns
     Q, D, T -> matrix decompositions with QDT = BL...B1
     """
-    
     Ns = system.V
 
     Q = [Matrix(1.0I, Ns, Ns), Matrix(1.0I, Ns, Ns)]
@@ -38,9 +37,7 @@ function full_propagation(
         Q[2], D[2], T[2] = QRCP_update(Q[2], D[2], T[2], mat_product_dn, 'L')
 
     end
-
     return Q, D, T
-
 end
 
 function full_propagation_lowrank(
@@ -57,7 +54,6 @@ function full_propagation_lowrank(
     # Returns
     Q, D, T -> matrix decompositions with QDT = BL...B1
     """
-    
     Ns = system.V
 
     Q = [Matrix(1.0I, Ns, Ns), Matrix(1.0I, Ns, Ns)]
@@ -86,9 +82,7 @@ function full_propagation_lowrank(
         )
 
     end
-
     return Q, D, T
-    
 end
 
 @inline function flip!(auxfield::Array{Int64,2}, i::Int64, j::Int64)

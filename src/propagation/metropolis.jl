@@ -40,7 +40,6 @@ function calc_trail_mcmc(
         [QDT[1][2], QDT[2][2]], 
         [QDT[1][3], QDT[2][3]]
     )
-
 end
 
 function propagate!_mcmc(

@@ -7,7 +7,7 @@ function initialize_walker_gce(system::System, qmc::QMC)
     Initialize a walker with a random configuration
     """
     # initialize a random field configuration
-    σfield = (rand(system.V, system.L) .< 0.5) .+ 1
+    σfield = 2 * (rand(system.V, system.L) .< 0.5) .- 1
     # initial propagation
     Q, D, T = full_propagation(σfield, system, qmc)
     # diagonalize the decomposition
@@ -17,25 +17,22 @@ function initialize_walker_gce(system::System, qmc::QMC)
     )
     # calculate the GCE statistical weight
     Z = (
-        real(prod(1 .+ system.expβμ * expβϵ[1])),
-        real(prod(1 .+ system.expβμ * expβϵ[2]))
+        prod(1 .+ system.expβμ * expβϵ[1]),
+        prod(1 .+ system.expβμ * expβϵ[2])
     )
 
     # construct the walker
     return Walker(
-        [Z[1], Z[2]],
-        σfield,
-        deepcopy(Q),
-        deepcopy(D),
-        deepcopy(T),
+        Z, σfield,
+        deepcopy(Q), deepcopy(D), deepcopy(T),
         0
     )
 
 end
 
-function calc_proposal_gce(
+function calc_trialwalker_gce(
     system::System, walker::Walker, σ::Vector{Int64}
-    )
+)
     """
     Calculate the statistical weight when the (i,j)th field component is proposed
 
@@ -60,12 +57,12 @@ function calc_proposal_gce(
     )
     # calculate the statistical weight (partition function)
     Z = (
-        real(prod(1 .+ system.expβμ * expβϵ[1])),
-        real(prod(1 .+ system.expβμ * expβϵ[2]))
+        prod(1 .+ system.expβμ * expβϵ[1]),
+        prod(1 .+ system.expβμ * expβϵ[2])
     )
     
     return TrialWalker(
-        [Z[1], Z[2]],
+        Z,
         [QDT[1][1], QDT[2][1]],
         [QDT[1][2], QDT[2][2]],
         [QDT[1][3], QDT[2][3]]
@@ -76,7 +73,7 @@ end
 function propagate!_gce(
     system::System, walker::Walker, 
     field_index::Tuple{Int64, Int64}, temp::MatDecomp
-    )
+)
     """
     Propagation at the jth site of the ith time slice
 
@@ -87,7 +84,7 @@ function propagate!_gce(
     # propose a flip at the jth site of the ith time slice
     flip!(walker.auxfield, field_index[2], field_index[1])
     # calculate the corresponding weight (partition function)
-    trialwalker = calc_proposal_gce(
+    trialwalker = calc_trialwalker_gce(
         system, walker, walker.auxfield[:, field_index[1]]
     )
     # weight ratio between the new and the old configurations
@@ -98,8 +95,9 @@ function propagate!_gce(
         # accept the proposal, update weights
         walker.weight .= [trialwalker.weight[1], trialwalker.weight[2]]
         # update the oral matrix decompositions
-        update_matrices!(temp.Q, temp.D, temp.T,
-                        trialwalker.Q, trialwalker.D, trialwalker.T
+        update_matrices!(
+            temp.Q, temp.D, temp.T,
+            trialwalker.Q, trialwalker.D, trialwalker.T
         )
     else
         # reject the proposal, rollback the change
@@ -160,7 +158,7 @@ function sweep!_gce(system::System, qmc::QMC, walker::Walker, temp::MatDecomp)
             # propagate through sites
             propagate!_gce(
                 system, walker, (l, i), temp
-                )
+            )
             if i == system.V
                 # update the matrices at the last spatial site
                 copy_matrices!(walker, temp, true)

@@ -64,5 +64,4 @@ mutable struct Hubbard <: System
         )
 
     end
-
 end

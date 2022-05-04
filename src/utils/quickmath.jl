@@ -12,7 +12,6 @@ function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}
     Ns = length(expβϵ)
 
     return (abs(expβϵ[Ns - N + 1]) + abs(expβϵ[Ns - N])) / 2
-
 end
 
 function poissbino(
@@ -52,7 +51,6 @@ function poissbino(
     end
 
     return P[:, Ns]
-
 end
 
 function sum_antidiagonal(A::AbstractMatrix)
@@ -75,5 +73,4 @@ function sum_antidiagonal(A::AbstractMatrix)
     end
 
     return v
-
 end

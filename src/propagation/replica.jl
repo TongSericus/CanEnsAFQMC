@@ -16,7 +16,6 @@ function heatbath_sampling(weights::Vector{Float64})
     end
 
     return ind
-
 end
 
 function propagate!_replica(
@@ -25,7 +24,6 @@ function propagate!_replica(
     field_index::Tuple{Int64, Int64},
     temp1::MatDecomp, temp2::MatDecomp
 )
-
     # propose a flip at the jth site of the ith time slice
     flip!(walker1.auxfield, field_index[2], field_index[1])
     flip!(walker2.auxfield, field_index[2], field_index[1])
@@ -76,7 +74,6 @@ function propagate!_replica(
             trialwalker2.Q, trialwalker2.D, trialwalker2.T
         )
     end
-
 end
 
 function sweep!_replica(
@@ -88,14 +85,11 @@ function sweep!_replica(
     Sweep two copies of walker over the entire space-time lattice
     """
     for l = 1 : system.L
-
         copy_matrices!(walker1, temp1, false)
         copy_matrices!(walker2, temp2, false)
-
         # move the walkers to the next time slice
         move!_mcmc(walker1, system, l)
         move!_mcmc(walker2, system, l)
-
         for i = 1 : system.V
             # propagate through sites
             propagate!_replica(
@@ -109,7 +103,6 @@ function sweep!_replica(
                 copy_matrices!(walker2, temp2, true)
             end
         end
-
         # periodically calibrate the walker
         walker1.update_count += 1
         if walker1.update_count == qmc.update_interval
@@ -118,5 +111,4 @@ function sweep!_replica(
             walker1.update_count = 0
         end
     end
-
 end

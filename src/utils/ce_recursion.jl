@@ -25,9 +25,7 @@ function pf_recursion(
     Z = P[N + 1] / P[2] * (expβμ) ^ (N - 1) * Z₁
 
     returnFull || return Z
-
     return expβϵμ, P, Z
-
 end
 
 function occ_recursion(
@@ -50,9 +48,7 @@ function occ_recursion(
     n_below = occ_recursion_rescaled(Ns, N, expβϵμ[Ns - N_below + 1 : Ns], P, n₁, true)
     # then concatenate
     n = vcat(n_above, n_below)
-
     return n
-
 end
 
 function occ_recursion_rescaled(
@@ -73,9 +69,7 @@ function occ_recursion_rescaled(
             # Truncate the values that are smaller than 10^-10
             n[i + 1, :] = n[i + 1, :] .* (abs.(real(n[i + 1, :])) .> 1e-10)
         end
-
         return n[N + 1, :]
-
     else
         N_rev = Ns - N                  # num. of reverse recursions
         n = ones(T, N_rev, Ñs)
@@ -85,9 +79,7 @@ function occ_recursion_rescaled(
             n[i + 1, :] = n[i + 1, :] .* (abs.(real(n[i + 1, :])) .> 1e-10)
             n[i + 1, :] = 1 .- n[i + 1, :]
         end
-
         return n[N_rev, :]
-
     end
 end
 
@@ -109,7 +101,5 @@ function second_order_corr(
             nij[j, i] = nij[i, j]
         end
     end
-
     return nij
-
 end
