@@ -9,7 +9,7 @@ function measure_energy_hubbard(
     """
     Ek, Ep = 0, 0
 
-    for i in eachindex(view(system.T, 1 : system.V, 1 : system.V))
+    for i in eachindex(@view system.T[1 : end, 1 : end])
         if system.T[i] != 0
             Ek += -system.t * (walker_list[1].G[i[1], i[2]] + walker_list[2].G[i[1], i[2]])
         end

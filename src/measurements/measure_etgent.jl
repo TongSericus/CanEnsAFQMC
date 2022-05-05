@@ -3,7 +3,7 @@
 """
 function eigvals_etgHam(
     nk::Vector{T1}, P::Matrix{T2}, invP::Matrix{T2}
-    ) where {T1<:FloatType, T2<:FloatType}
+) where {T1<:FloatType, T2<:FloatType}
     """
     Stable eigen decomposion of GA using SVD
     """
@@ -21,7 +21,7 @@ end
 function eigvals_squaredEtgHam(
     nk1::Vector{T1}, P1::Matrix{T2}, invP1::Matrix{T2},
     nk2::Vector{T3}, P2::Matrix{T4}, invP2::Matrix{T4}
-    ) where {T1<:FloatType, T2<:FloatType, T3<:FloatType, T4<:FloatType}
+) where {T1<:FloatType, T2<:FloatType, T3<:FloatType, T4<:FloatType}
     """
     Compute the eigenvalues of exp(-HA1) * exp(-HA2) in the form
     of GA1 * (I - GA1)^-1 * GA2 * (I - GA2)^-1
