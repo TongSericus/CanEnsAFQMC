@@ -30,8 +30,8 @@ function eigvals_squaredEtgHam(
     nAk1, PA1, invPA1 = eigvals_etgHam(nk1, P1, invP1)
     nAk2, PA2, invPA2 = eigvals_etgHam(nk2, P2, invP2)
 
-    nAkc1 = 1 .- nAk1
-    nAkc2 = 1 .- nAk2
+    nAkc1 = regularized_complement.(nAk1)
+    nAkc2 = regularized_complement.(nAk2)
 
     # Compute SVD decomposions of GAi * (I - GAi)^-1
     UDV_HA1 = svd(Diagonal(nAk1 ./ nAkc1) * invPA1)

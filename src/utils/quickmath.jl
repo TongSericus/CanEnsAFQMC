@@ -14,6 +14,10 @@ function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}
     return (abs(expβϵ[Ns - N + 1]) + abs(expβϵ[Ns - N])) / 2
 end
 
+function regularized_complement(a::T, cutoff::Float64 = 1e-10) where {T<:FloatType}
+    return (1 - a) + cutoff
+end
+
 function poissbino(
     Ns::Int64, ϵ::Array{T,1}, isNormalized::Bool
 ) where {T<:FloatType}

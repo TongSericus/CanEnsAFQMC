@@ -46,7 +46,7 @@ function reblock(x::Vector{T}) where {T <: FloatType}
     """
     Compute the reblocked sample averages and error bars using ACF
     """
-    Nmax = convert(Int64,floor(log2(length(x))))
+    Nmax = convert(Int64, floor(log2(length(x))))
     τ = Vector{T}()
     for i = 0 : Nmax - 1
         n = convert(Int64, floor(length(x) / 2 ^ i))
@@ -58,7 +58,7 @@ function reblock(x::Vector{T}) where {T <: FloatType}
     xblocked = Vector{T}()
     for i = 1 : nblocks
         offset = (i - 1) * block_size + 1
-        push!(xblocked, mean(x[offset : min(offset + block_size, end)]))
+        push!(xblocked, mean(x[offset : offset + block_size - 1]))
     end
 
     return mean(xblocked), std(xblocked) / sqrt(nblocks)
