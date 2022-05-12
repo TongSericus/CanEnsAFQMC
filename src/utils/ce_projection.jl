@@ -14,7 +14,7 @@ function pf_projection(
 ) where {T<:FloatType}
     expβμ = fermilevel(expβϵ, N)
     η = [prod(1 .+ expiφ[m] / expβμ * expβϵ) for m = 1 : Ns + 1]
-    Z = sum(conj(expiφ) .^ N .* η) / (Ns + 1) * expβμ ^ N
+    Z = sum(quick_rotation(expiφ, N, true) .* η) / (Ns + 1) * expβμ ^ N
 
     returnFull || return Z
     return expβμ, η, Z
@@ -26,7 +26,7 @@ function occ_projection(
 ) where {T<:FloatType}
     expβμ, η, Z = pf_projection(Ns, N, expβϵ, expiφ, true)
     ñ = [expiφ[m] / expβμ * expβϵ[i] / (1 + expiφ[m] / expβμ * expβϵ[i]) for m = 1 : Ns + 1, i = 1 : Ns]
-    n = [sum(conj(expiφ) .^ N .* ñ[:, i] .* η) * expβμ ^ N / (Ns + 1) / Z for i = 1 : Ns]
+    n = [sum(quick_rotation(expiφ, N, true) .* ñ[:, i] .* η) * expβμ ^ N / (Ns + 1) / Z for i = 1 : Ns]
     return n
 end
 

@@ -10,12 +10,25 @@ function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}
     Compute an approximate Fermi level
     """
     Ns = length(expβϵ)
-
-    return (abs(expβϵ[Ns - N + 1]) + abs(expβϵ[Ns - N])) / 2
+    return sqrt(abs(expβϵ[Ns - N + 1] * expβϵ[Ns - N]))
 end
 
 function regularized_complement(a::T, cutoff::Float64 = 1e-10) where {T<:FloatType}
     return (1 - a) + cutoff
+end
+
+function quick_rotation(expiφ::Vector{ComplexF64}, N::Int64, isConj::Bool = false)
+    """
+    Rotation on a unit complex circle
+    """
+    Ns = length(expiφ)
+    expiφ_rotated = copy(expiφ)
+    for i = 1 : length(expiφ) - 1
+        expiφ_rotated[i] = expiφ[mod(i * N, Ns)]
+    end
+
+    isConj || return expiφ_rotated
+    return conj(expiφ_rotated)
 end
 
 function poissbino(
