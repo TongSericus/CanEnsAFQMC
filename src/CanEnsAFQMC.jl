@@ -20,7 +20,7 @@ export pf_recursion, occ_recursion,
     pf_projection, occ_projection
 include("./utils/ce_recursion.jl")
 include("./utils/ce_projection.jl")
-export QRCP_update
+export UDT, QRCP_merge, QRCP_sum, QRCP_lmul, QRCP_rmul
 include("./utils/linalg.jl")
 
 export Walker, ConstrainedWalker, TrialWalker, MatDecomp, QDT

@@ -32,7 +32,9 @@ function quick_rotation(expiφ::Vector{ComplexF64}, N::Int64, isConj::Bool = fal
 end
 
 function poissbino(
-    Ns::Int64, ϵ::Array{T,1}, isNormalized::Bool
+    Ns::Int64, ϵ::Array{T,1}, 
+    isNormalized::Bool = false;
+    cutoff = 1e-10
 ) where {T<:FloatType}
     """
     A regularized version of the recursive calculation for the Poisson binomial
@@ -46,8 +48,8 @@ function poissbino(
     ν1 = zeros(T, Ns)
     ν2 = zeros(T, Ns)
     if isNormalized
-        ν1 = ϵ .+ (abs.(ϵ) .< 1e-10) * 1e-10
-        ν2 = 1 .- ϵ .+ (abs.(1 .- ϵ) .< 1e-10) * 1e-10
+        ν1 = ϵ .+ (abs.(ϵ) .< cutoff) * cutoff
+        ν2 = 1 .- ϵ .+ (abs.(1 .- ϵ) .< cutoff) * cutoff
     else
         ν1 = ϵ ./ (1 .+ ϵ)
         ν2 = 1 ./ (1 .+ ϵ)
@@ -77,7 +79,7 @@ function sum_antidiagonal(A::AbstractMatrix)
     """
     row, col = size(A)
     row == col || @error "Non-sqaure matrix"
-    v = Vector{typeof(A[1])}()
+    v = Vector{eltype(A)}()
 
     for i = -col + 1 : col - 1
         if i < 0

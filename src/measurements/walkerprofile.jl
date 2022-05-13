@@ -10,15 +10,9 @@ struct WalkerProfile{T1<:FloatType, T2<:FloatType}
 end
 
 function WalkerProfile(system::System, walker::Walker, spin::Int64)
-    walker_eigen = eigen(walker.D[spin] * walker.T[spin] * walker.Q[spin], sortby = abs)
-    P = walker.Q[spin] * walker_eigen.vectors
-    ni = occ_projection(system.V, system.N[spin], walker_eigen.values, system.expiφ)
-
-    return WalkerProfile(
-        walker.weight[spin],
-        walker_eigen.values,
-        P, inv(P), 
-        P * Diagonal(ni) * inv(P)
-    )
-
+    expβϵ, P = eigen(walker.F[spin])
+    invP = inv(P)
+    ni = occ_projection(system.V, system.N[spin], expβϵ, system.expiφ)
+    G = P * Diagonal(ni) * invP
+    WalkerProfile(walker.weight[spin], expβϵ, P, invP, G)
 end
