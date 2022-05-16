@@ -59,28 +59,21 @@ etg = EtgMeasure(
 function replica_run(worker_id, system, qmc)
     # initialize two copies of walker
     walker1 = Walker(system, qmc)
+    tmp1 = deepcopy(walker1.F)
     walker2 = Walker(system, qmc)
-    temp1 = QDT(
-        deepcopy(walker1.Q),
-        deepcopy(walker1.D),
-        deepcopy(walker1.T)
-    )
-    temp2 = QDT(
-        deepcopy(walker2.Q),
-        deepcopy(walker2.D),
-        deepcopy(walker2.T)
-    )
-    sample_list = Vector{MCSample}()
+    tmp2 = deepcopy(walker2.F)
+
+    system.isReal ? sample_list = Vector{MCSampleReal}() : sample_list = Vector{MCSampleComplex}()
 
     ### Monte Carlo Sampling ###
     ####### Warm-up Step #######
     for i = 1 : qmc.nwarmups
         # sweep the entire space-time lattice
-        sweep!_replica(system, qmc, walker1, walker2, temp1, temp2)
+        sweep!_replica(system, qmc, walker1, walker2, tmp1, tmp2)
     end
     for i = 1 : qmc.nsamples
-        sample = MCSample()
-        sweep!_replica(system, qmc, walker1, walker2, temp1, temp2)
+        system.isReal ? sample = MCSampleReal() : sample = MCSampleComplex()
+        sweep!_replica(system, qmc, walker1, walker2, tmp1, tmp2)
         walker1_profile = [WalkerProfile(system, walker1, 1), WalkerProfile(system, walker1, 2)]
         walker2_profile = [WalkerProfile(system, walker2, 1), WalkerProfile(system, walker2, 2)]
 
@@ -95,7 +88,8 @@ function replica_run(worker_id, system, qmc)
             expS2_dn, expS2n_dn = measure_renyi2_entropy(system, etg.Aidx[k], 2, walker1_profile[2], walker2_profile[2])
             # merge
             push!(sample.expS2, expS2_up * expS2_dn)
-            push!(sample.expS2n, expS2n_up * expS2n_dn')
+            push!(sample.expS2n_up, expS2n_up)
+            push!(sample.expS2n_dn, expS2n_dn)
         end
 
         push!(sample_list, sample)

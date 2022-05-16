@@ -76,8 +76,7 @@ function measure_renyi2_entropy(
         end
     end
 
-    # rescale factor
-    r = expβμ1^N * expβμ2^N / walker1.weight / walker2.weight / (system.V + 1)^2
-    return expS2 * r , expS2n * r
-    
+    r = expβμ1^N * expβμ2^N / walker1.weight / walker2.weight / (system.V + 1)^2    # rescale factor
+    system.isReal && return real(expS2 * r), real(expS2n * r)
+    return expS2 * r, expS2n * r
 end

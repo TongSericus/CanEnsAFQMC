@@ -2,8 +2,8 @@
     Measure energy
 """
 function measure_energy_hubbard(
-    system::System, walker_list::Vector{WalkerProfile}
-)
+    system::System, walker_list::Vector{WalkerProfile{T1, T2, T3}}
+) where {T1,T2,T3 <: FloatType}
     """
     Measure the kinetic (one-body), the potential (two-body) energy and total energy
     """

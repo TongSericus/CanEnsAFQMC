@@ -20,6 +20,7 @@ function full_propagation(
         UDT(Matrix(1.0I, Ns, Ns), ones(Float64, Ns), Matrix(1.0I, Ns, Ns)),
         UDT(Matrix(1.0I, Ns, Ns), ones(Float64, Ns), Matrix(1.0I, Ns, Ns))
     ]
+    B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
 
     for i = 1 : div(system.L, qmc.stab_interval)
 
@@ -27,8 +28,8 @@ function full_propagation(
         mat_product_dn = Matrix(1.0I, Ns, Ns)
 
         for j = 1 : qmc.stab_interval
-            σ = auxfield[:, (i - 1) * qmc.stab_interval + j]
-            B = singlestep_matrix(σ, system)
+            @views σ = auxfield[:, (i - 1) * qmc.stab_interval + j]
+            singlestep_matrix!(B, σ, system)
             mat_product_up = B[1] * mat_product_up
             mat_product_dn = B[2] * mat_product_dn
         end

@@ -28,8 +28,8 @@ function calc_trail_mcmc(
         pf_projection(system.V, system.N[2], expβϵ[2], system.expiφ, false)
     ]
     
+    system.isReal && return real(Z), F
     return Z, F
-
 end
 
 function propagate!_mcmc(

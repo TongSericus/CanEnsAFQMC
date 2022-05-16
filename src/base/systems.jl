@@ -21,13 +21,13 @@ mutable struct Hubbard <: System
         BTinv -> inverse of trial propagator matrix
     """
     ### Model Constants ###
+    isReal::Bool
     Ns::Tuple{Int64, Int64}
     V::Int64
     N::Tuple{Int64, Int64}
     t::Float64
     U::Float64
     T::Array{Float64,2}
-    μ::Float64
     expβμ::Float64
     expiφ::Vector{ComplexF64}
     ### AFQMC Constants ###
@@ -42,7 +42,8 @@ mutable struct Hubbard <: System
     function Hubbard(
         Ns::Tuple{Int64, Int64}, N::Tuple{Int64, Int64},
         t::Float64, U::Float64,
-        μ::Float64, Δτ::Float64, L::Int64
+        μ::Float64, Δτ::Float64, L::Int64;
+        isReal::Bool = true
     )
         if Ns[2] == 1 
             T = kinetic_matrix_hubbard1D(Ns[1], t)
@@ -57,8 +58,9 @@ mutable struct Hubbard <: System
         expiφ = exp.(im * [2 * π * m / (prod(Ns) + 1) for m = 1 : prod(Ns) + 1])
 
         return new(
+            isReal,
             Ns, prod(Ns), N, t, U, T, 
-            μ, exp(Δτ * L * μ), expiφ, 
+            exp(Δτ * L * μ), expiφ, 
             Δτ, L, auxfield,
             exp(-T * Δτ/2), exp(-T * Δτ), inv(exp(-T * Δτ))
         )

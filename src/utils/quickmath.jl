@@ -2,7 +2,7 @@
     Some math functions
 """
 function sgn(a::T) where {T<:FloatType}
-    return convert(ComplexF64, a / abs(a))
+    return a / abs(a)
 end
 
 function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}

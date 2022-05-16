@@ -27,7 +27,8 @@ function Walker(system::System, qmc::QMC)
         pf_projection(system.V, system.N[2], expβϵ[2], system.expiφ, false)
     ]
 
-    Walker(Z, auxfield, F)
+    system.isReal && return Walker(real(Z), auxfield, F)
+    return Walker(Z, auxfield, F)
 end
 
 struct ConstrainedWalker{T1<:FloatType, T2<:FloatType}
@@ -61,7 +62,8 @@ function ConstrainedWalker(system::System, qmc::QMC)
     ]
 
     # construct the walker
-    ConstrainedWalker(Z, [1.0, 1.0], auxfield, F)
+    system.isReal && return ConstrainedWalker(real(Z), [1.0, 1.0], auxfield, F)
+    return ConstrainedWalker(Z, [1.0, 1.0], auxfield, F)
 end
 
 init_walker_list(system::System, qmc::QMC) = let 
