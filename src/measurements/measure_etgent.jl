@@ -45,8 +45,7 @@ function measure_renyi2_entropy(
     expS2 = 0
     nU = min(LA, system.N[spin])
     nL = max(0, system.N[spin] - system.V + LA)
-    Ln = nU - nL + 1
-    expS2n = zeros(ComplexF64, Ln)
+    expS2n = SizedVector{N[spin] + 1}(zeros(ComplexF64, system.N[spin] + 1))
     
     # measure through a 2D Fourier transform
     for m = 1 : system.V + 1
@@ -72,7 +71,7 @@ function measure_renyi2_entropy(
             # particle-number-resolved Renyi-2 entropy calculation
             ν2mn = eigvals_squaredEtgHam(GA1, GAc1, GA2, GAc2)
             Pmn = poissbino(LA, ν2mn, false)[nL + 1 : nU + 1]
-            expS2n += expS2_temp * Pmn
+            expS2n[nL + 1 : nU + 1] += expS2_temp * Pmn
         end
     end
 

@@ -8,7 +8,7 @@ include("./base/constants.jl")
 
 export QMC, GeneralMeasure, EtgMeasure
 export System, Hubbard
-export MCSample, MCSampleReal, MCSampleComplex
+export RegSample, EtgSample
 include("./base/systems.jl")
 include("./base/matrix_generator.jl")
 include("./base/variable.jl")

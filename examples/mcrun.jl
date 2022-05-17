@@ -1,6 +1,6 @@
 using CanEnsAFQMC, JLD
 
-system = Hubbard(
+const system = Hubbard(
     ### Model Constants ###
     # number of sites in each dimension (NsX, NsY)
     (4, 2),
@@ -19,7 +19,7 @@ system = Hubbard(
     250
 )
 
-qmc = QMC(
+const qmc = QMC(
     # number of processors (not working for now)
     1,
     ### MCMC (Metropolis) ###
@@ -48,7 +48,7 @@ qmc = QMC(
     1e-3
 )
 
-etg = EtgMeasure(
+const etg = EtgMeasure(
     # Site indices of the subsystem
     [[1, 2, 3, 4],
     [1, 5],
@@ -63,7 +63,8 @@ function replica_run(worker_id, system, qmc)
     walker2 = Walker(system, qmc)
     tmp2 = deepcopy(walker2.F)
 
-    system.isReal ? sample_list = Vector{MCSampleReal}() : sample_list = Vector{MCSampleComplex}()
+    T = system.isReal ? Float64 : ComplexF64
+    sample_list = Vector{EtgSample}()
 
     ### Monte Carlo Sampling ###
     ####### Warm-up Step #######
@@ -72,7 +73,7 @@ function replica_run(worker_id, system, qmc)
         sweep!_replica(system, qmc, walker1, walker2, tmp1, tmp2)
     end
     for i = 1 : qmc.nsamples
-        system.isReal ? sample = MCSampleReal() : sample = MCSampleComplex()
+        sample = EtgSample{T, system.N[1] + 1, system.N[2] + 1}()
         sweep!_replica(system, qmc, walker1, walker2, tmp1, tmp2)
         walker1_profile = [WalkerProfile(system, walker1, 1), WalkerProfile(system, walker1, 2)]
         walker2_profile = [WalkerProfile(system, walker2, 1), WalkerProfile(system, walker2, 2)]

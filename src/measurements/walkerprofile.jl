@@ -14,6 +14,6 @@ function WalkerProfile(system::System, walker::Walker, spin::Int64)
     invP = inv(P)
     ni = occ_projection(system.V, system.N[spin], expβϵ, system.expiφ)
     G = P * Diagonal(ni) * invP
-    system.isReal && return WalkerProfile(walker.weight[spin], expβϵ, P, invP, real(G))
-    return WalkerProfile(walker.weight[spin], expβϵ, P, invP, G)
+    system.isReal && return WalkerProfile{Float64, eltype(expβϵ), Float64}(walker.weight[spin], expβϵ, P, invP, real(G))
+    return WalkerProfile{ComplexF64, eltype(expβϵ), eltype(G)}(walker.weight[spin], expβϵ, P, invP, G)
 end

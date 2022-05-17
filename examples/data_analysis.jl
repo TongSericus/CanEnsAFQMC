@@ -7,8 +7,8 @@ function data_analysis_etgent(filenames::Vector{String})
     for filename in filenames
         data = JLD.load("../data/$filename", "sample_list")
         for i = 1 : 4
-        expS2_array[i] = [expS2_array[i]; [real(data[n].expS2[i]) for n = 1 : length(data)]]
-        expS2n_array[i] = [expS2n_array[i]; [real(sum_antidiagonal(data[n].expS2n[i])) for n = 1 : length(data)]]
+        expS2_array[i] = [expS2_array[i]; [data[n].expS2[i] for n = 1 : length(data)]]
+        expS2n_array[i] = [expS2n_array[i]; [sum_antidiagonal(data[n].expS2n_up[i] * data[n].expS2n_dn[i]') for n = 1 : length(data)]]
         end
     end
 
@@ -27,6 +27,7 @@ function data_analysis_etgent(filenames::Vector{String})
         cutoff = (P2n .> 0) .* (P2n .> 1e-10)
         cutoff_ind = findall(x -> x, cutoff)
         Hα = 2 * log(sum(sqrt.(P2n[cutoff_ind])))
+        println("Shannon Entropy: $Hα")
         S2op = S2 - Hα
         println("Accessible EE: $S2op")
     end
