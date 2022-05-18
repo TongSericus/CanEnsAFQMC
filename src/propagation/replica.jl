@@ -20,7 +20,7 @@ function propagate!_replica(
     system::System, walker1::Walker, walker2::Walker,
     field_index::Tuple{Int64, Int64},
     tmp1::Vector{UDT{T1}}, tmp2::Vector{UDT{T2}}
-) where {T1,T2<:FloatType}
+) where {T1<:FloatType, T2<:FloatType}
     # propose a flip at the jth site of the ith time slice
     flip!(walker1.auxfield, field_index[2], field_index[1])
     flip!(walker2.auxfield, field_index[2], field_index[1])
@@ -70,9 +70,10 @@ end
 
 function sweep!_replica(
     system::System, qmc::QMC,
-    walker1::Walker, walker2::Walker,
-    tmp1::Vector{UDT{T1}}, tmp2::Vector{UDT{T2}}
-) where {T1,T2<:FloatType}
+    walker1::Walker, walker2::Walker;
+    tmp1 = [similar(walker1.F[1]), similar(walker1.F[2])],
+    tmp2 = [similar(walker2.F[1]), similar(walker2.F[2])]
+)
     """
     Sweep two copies of walker over the entire space-time lattice
     """

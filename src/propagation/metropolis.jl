@@ -68,7 +68,9 @@ end
 
 function sweep!(
     system::System, qmc::QMC, 
-    walker::Walker, tmp::Vector{UDT{T}}) where {T<:FloatType}
+    walker::Walker;
+    tmp = [similar(walker.F[1]), similar(walker.F[2])]
+)
     """
     Sweep the walker over the entire space-time lattice
     """
