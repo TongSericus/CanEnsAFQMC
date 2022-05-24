@@ -59,22 +59,20 @@ const etg = EtgMeasure(
 function replica_run(worker_id, system, qmc)
     # initialize two copies of walker
     walker1 = Walker(system, qmc)
-    tmp1 = deepcopy(walker1.F)
     walker2 = Walker(system, qmc)
-    tmp2 = deepcopy(walker2.F)
 
     T = system.isReal ? Float64 : ComplexF64
-    sample_list = Vector{EtgSample}()
+    sample_list = Vector{EtgSample{T, system.N[1] + 1, system.N[2] + 1}}()
 
     ### Monte Carlo Sampling ###
     ####### Warm-up Step #######
     for i = 1 : qmc.nwarmups
         # sweep the entire space-time lattice
-        sweep!_replica(system, qmc, walker1, walker2, tmp1, tmp2)
+        sweep!_replica(system, qmc, walker1, walker2)
     end
     for i = 1 : qmc.nsamples
         sample = EtgSample{T, system.N[1] + 1, system.N[2] + 1}()
-        sweep!_replica(system, qmc, walker1, walker2, tmp1, tmp2)
+        sweep!_replica(system, qmc, walker1, walker2)
         walker1_profile = [WalkerProfile(system, walker1, 1), WalkerProfile(system, walker1, 2)]
         walker2_profile = [WalkerProfile(system, walker2, 1), WalkerProfile(system, walker2, 2)]
 
