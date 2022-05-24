@@ -3,20 +3,20 @@ using CanEnsAFQMC, JLD
 const system = Hubbard(
     ### Model Constants ###
     # number of sites in each dimension (NsX, NsY)
-    (4, 2),
+    (6, 6),
     # number of spin-ups/downs (nup, ndn)
-    (4, 4),
+    (18, 18),
     # hopping constant t
     1.0,
     # on-site repulsion constant U
-    1.0,
+    2.0,
     # chemical potential used for the GCE calculations
     0.5,
     ### AFQMC Constants ###
     # imaginary time interval (Δτ)
-    0.02,
+    0.01,
     # number of imaginary time slices L = β / Δτ
-    250
+    1000
 )
 
 const qmc = QMC(
@@ -24,9 +24,9 @@ const qmc = QMC(
     1,
     ### MCMC (Metropolis) ###
     # number of warm-up runs
-    1,
+    50,
     # number of Metropolis samples per processor
-    10,
+    1e4,
     # number of Metropolis samples (not working for now)
     1,
     ### Branching Ramdom Walk ###
@@ -50,10 +50,12 @@ const qmc = QMC(
 
 const etg = EtgMeasure(
     # Site indices of the subsystem
-    [[1, 2, 3, 4],
-    [1, 5],
-    [1, 2, 5, 6],
-    [1, 2, 3, 5, 6, 7]
+    [[i for i = 1 : 6],
+    [i for i = 7 : 36],
+    [1 for i = 1 : 12],
+    [i for i = 13 : 36],
+    [i for i = 1 : 18],
+    [i for i = 19: 36]
 ])
 
 function replica_run(worker_id, system, qmc)
