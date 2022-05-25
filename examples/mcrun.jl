@@ -50,12 +50,9 @@ const qmc = QMC(
 
 const etg = EtgMeasure(
     # Site indices of the subsystem
-    [[i for i = 1 : 6],
-    [i for i = 7 : 36],
-    [1 for i = 1 : 12],
-    [i for i = 13 : 36],
-    [i for i = 1 : 18],
-    [i for i = 19: 36]
+    [collect(1:6), collect(7:36),
+    collect(1:12), collect(13:36),
+    collect(1:18), collect(19:36)
 ])
 
 function replica_run(worker_id, system, qmc)

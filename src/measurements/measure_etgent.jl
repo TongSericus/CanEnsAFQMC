@@ -2,17 +2,21 @@
     Measure Renyi-2 and accessible entanglement entropies
 """
 function eigvals_squaredEtgHam(
-    GA1::UDT, GAc1::UDT, GA2::UDT, GAc2::UDT
-)
+    eigenGA1::Eigen{T, T, Matrix{T}, Vector{T}},
+    eigenGA2::Eigen{T, T, Matrix{T}, Vector{T}}
+) where {T<:FloatType}
     """
     Compute the eigenvalues of exp(-HA1) * exp(-HA2) in the form
     of GA1 * (I - GA1)^-1 * GA2 * (I - GA2)^-1
     """
-    invGAc1 = UDT(inv(GAc1))
-    HA1 = QRCP_merge(GA1, invGAc1)
+    nkA1, P1 = eigenGA1
+    nkA2, P2 = eigenGA2
 
-    invGAc2 = UDT(inv(GAc2))
-    HA2 = QRCP_merge(GA2, invGAc2)
+    nkAc1 = regularized_complement.(nkA1)
+    HA1 = UDT(nkA1 ./ nkAc1, P1, inv(P1))
+
+    nkAc2 = regularized_complement.(nkA2)
+    HA2 = UDT(nkA2 ./ nkAc2, P2, inv(P2))
 
     HA = QRCP_merge(HA1, HA2)
 
@@ -69,7 +73,9 @@ function measure_renyi2_entropy(
             expS2 += expS2_temp
 
             # particle-number-resolved Renyi-2 entropy calculation
-            ν2mn = eigvals_squaredEtgHam(GA1, GAc1, GA2, GAc2)
+            eigenGA1 = eigen(GA1)
+            eigenGA2 = eigen(GA2)
+            ν2mn = eigvals_squaredEtgHam(eigenGA1, eigenGA2)
             Pmn = poissbino(LA, ν2mn, false)[nL + 1 : nU + 1]
             expS2n[nL + 1 : nU + 1] += expS2_temp * Pmn
         end

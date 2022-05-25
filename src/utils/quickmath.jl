@@ -13,8 +13,9 @@ function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}
     return sqrt(abs(expβϵ[Ns - N + 1] * expβϵ[Ns - N]))
 end
 
-function regularized_complement(a::T, cutoff::Float64 = 1e-10) where {T<:FloatType}
-    return (1 - a) + cutoff
+function regularized_complement(a::T; cutoff::Float64 = 1e-10) where {T<:FloatType}
+    abs(1 - a) < cutoff && return cutoff
+    return 1 - a
 end
 
 function quick_rotation(expiφ::Vector{ComplexF64}, N::Int64, isConj::Bool = false)
