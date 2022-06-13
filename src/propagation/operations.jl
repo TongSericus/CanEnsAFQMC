@@ -2,72 +2,95 @@
     All operations in the propagation
 """
 
-function full_propagation(
+function initial_propagation(
     auxfield::Matrix{Int64}, system::System, qmc::QMC
 )
     """
-    Propagate the entire space-time auxiliary field
-    using column-pivoted QR (QRCP) decomposition
+    Stable propagation over the entire space-time auxiliary field
+    from scratch
 
     # Arguments
-    auxfield -> the entire Ns×L auxiliary field
+    auxfield -> the entire Ns*L auxiliary field
 
     # Returns
-    F = (Q, D, T) -> matrix decompositions with QDT = BL...B1
+    F -> matrix decompositions with Matrix(F) = BL...B1
     """
     Ns = system.V
-    F = [
-        UDT(Matrix(1.0I, Ns, Ns), ones(Float64, Ns), Matrix(1.0I, Ns, Ns)),
-        UDT(Matrix(1.0I, Ns, Ns), ones(Float64, Ns), Matrix(1.0I, Ns, Ns))
-    ]
+
+    if qmc.isLowrank
+        F = [UDTlr(Ns), UDTlr(Ns)]
+    elseif qmc.isCP
+        F = [UDT(Ns), UDT(Ns)]
+    else
+        F = [UDR(Ns), UDR(Ns)]
+    end
+
     B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
+    MP = Cluster(Ns, qmc.K * 2)
 
-    for i = 1 : div(system.L, qmc.stab_interval)
-
-        mat_product_up = Matrix(1.0I, Ns, Ns)
-        mat_product_dn = Matrix(1.0I, Ns, Ns)
+    for i in 1 : qmc.K
 
         for j = 1 : qmc.stab_interval
             @views σ = auxfield[:, (i - 1) * qmc.stab_interval + j]
             singlestep_matrix!(B, σ, system)
-            mat_product_up = B[1] * mat_product_up
-            mat_product_dn = B[2] * mat_product_dn
+            MP.B[i] = B[1] * MP.B[i]                    # spin-up
+            MP.B[qmc.K + i] = B[2] * MP.B[qmc.K + i]    # spin-down
         end
 
-        F[1] = QRCP_lmul(mat_product_up, F[1])
-        F[2] = QRCP_lmul(mat_product_dn, F[2])
+        qmc.isLowrank ? 
+            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[qmc.K + i], F[2], system.N[2], qmc.lrThld)] :
+            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[qmc.K + i], F[2])]
 
     end
 
+    return F, MP
+
+end
+
+function full_propagation(MP::Cluster{T}, system::System, qmc::QMC) where T
+    """
+    Full propagation over the entire space-time auxiliary field 
+    for test purposes
+    """
+    Ns = system.V
+
+    if qmc.isLowrank
+        F = [UDTlr(Ns), UDTlr(Ns)]
+    elseif qmc.isCP
+        F = [UDT(Ns), UDT(Ns)]
+    else
+        F = [UDR(Ns), UDR(Ns)]
+    end
+
+    for i in 1 : qmc.K
+        qmc.isLowrank ?
+            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[qmc.K + i], F[2], system.N[2], qmc.lrThld)] :
+            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[qmc.K + i], F[2])]
+    end
     return F
-
 end
 
-@inline function flip!(auxfield::Array{Int64,2}, i::Int64, j::Int64)
-    auxfield[i, j] = -auxfield[i, j]
-end
+function partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::UnitRange{Int64}) where T
+    """
+    Propagation over the space-and-partial-time field
+    for calibration and test purposes
+    """
+    Ns = system.V
 
-function move!_mcmc(walker::Walker, system::System, time_index::Int64)
-    """
-    Move the walker to the next time slice,
-    i.e. calculate B = B_{l-1}...B_1 * B_L...B_l * B_l^-1
-    """
-    Bl = singlestep_matrix(walker.auxfield[:, time_index], system)
-    F = QRCP_rmul(walker.F[1], inv(Bl[1]))
-    update_matrices!(walker.F[1], F)
-    F = QRCP_rmul(walker.F[2], inv(Bl[2]))
-    update_matrices!(walker.F[2], F)
-end
+    if qmc.isLowrank
+        F = [UDTlr(Ns), UDTlr(Ns)]
+    elseif qmc.isCP
+        F = [UDT(Ns), UDT(Ns)]
+    else
+        F = [UDR(Ns), UDR(Ns)]
+    end
 
-function move!_constrained(walker::Walker, system::System)
-    """
-    Move the walker to the next time slice,
-    i.e. calculate B = Bl...B1 * BT...BT * (BT)^-1
-    """
-    F = QRCP_rmul(walker.F[1], system.BT_inv)
-    update_matrices!(walker.F[1], F)
-    F = QRCP_rmul(walker.F[2], system.BT_inv)
-    update_matrices!(walker.F[2], F)
+    for i in a
+        qmc.isLowrank ?
+            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[qmc.K + i], F[2], system.N[2], qmc.lrThld)] :
+            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[qmc.K + i], F[2])]
+    end
+    return F
 end
 
 function update_matrices!(F0::UDT, Ft::UDT)
@@ -76,15 +99,138 @@ function update_matrices!(F0::UDT, Ft::UDT)
     F0.T .= Ft.T
 end
 
-function calibrate!(system::System, qmc::QMC, walker::Walker, time_index::Int64)
+function update_matrices!(F0::UDR, Ft::UDR)
+    F0.U .= Ft.U
+    F0.D .= Ft.D
+    F0.R .= Ft.R
+end
+
+function update_matrices!(
+    F0::Vector{UDR{T}}, Ft::Vector{UDR{T}}
+) where {T<:FloatType}
+    length(F0) == length(Ft) || @error "Mismatching Size"
+    for i in 1 : length(F0)
+        F0[i].U .= Ft[i].U
+        F0[i].D .= Ft[i].D
+        F0[i].R .= Ft[i].R
+    end
+end
+
+function calibrate(system::System, qmc::QMC, cluster::Cluster{T}, cidx::Int64) where T
     """
-    Q, D, T matrices need to be recalculated periodically
+    Factorization matrices need to be recalculated periodically
 
     # Arguments
-    time_index -> time slice index
+    cidx -> cluster index
     """
-    shifted_field = circshift(walker.auxfield, (0, -time_index))
-    F = full_propagation(shifted_field, system, qmc)
-    update_matrices!(walker.F[1], F[1])
-    update_matrices!(walker.F[2], F[2])
+    Ns = system.V
+
+    if qmc.isLowrank
+        FL, FR = [UDTlr(Ns), UDTlr(Ns)], [UDTlr(Ns), UDTlr(Ns)]
+    elseif qmc.isCP
+        FL, FR = [UDT(Ns), UDT(Ns)], [UDT(Ns), UDT(Ns)]
+    else
+        FL, FR = [UDR(Ns), UDR(Ns)], [UDR(Ns), UDR(Ns)]
+    end
+
+    if cidx == 1
+        FL = partial_propagation(cluster, system, qmc, cidx + 1 : qmc.K)
+        return FL, FR
+    elseif cidx == qmc.K
+        FR = partial_propagation(cluster, system, qmc, 1 : cidx - 1)
+        return FL, FR
+    else
+        FL = partial_propagation(cluster, system, qmc, cidx + 1 : qmc.K)
+        FR = partial_propagation(cluster, system, qmc, 1 : cidx - 1)
+        return FL, FR
+    end
+end
+
+"""
+    Repartition scheme
+"""
+function repartition(
+    F::UDTlr{T}, N::Int64, γ::Float64; isDiag::Bool = true
+) where {T<:FloatType}
+    d = F.D
+    # truncate from above
+    Nu = N - 1
+    while Nu > 0 && d[Nu + 1] / d[Nu] > γ
+        Nu -= 1
+    end
+    tocc = 1 : Nu
+    tf = Nu + 1 : F.t.stop
+
+    B = @views F.T[F.t, :] * F.U[:, F.t]
+    P = @views B[tf, tocc] * inv(B[tocc, tocc])
+    Mocc = @views B[tocc, tocc] * Diagonal(F.D[tocc]) + B[tocc, tf] * Diagonal(F.D[tf]) * P
+    Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[tf])
+
+    isDiag && return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
+    return Mocc, Mf
+end
+
+function repartition(
+    Ns::Int64, N::Int64, F::UDR{T}, γ::Float64, ϵ::Float64
+) where {T<:FloatType}
+    #normR = [norm(@view F.R[i, :])^2 for i in 1 : Ns]
+    #d = F.D .* normR
+    dsort = sortperm(F.D, rev = true)
+    d = F.D[dsort]
+
+    # truncation from above
+    Nu = N - 1
+    while Nu > 0 && d[Nu + 1] / d[Nu] > γ
+        Nu -= 1
+    end
+    tocc = 1 :Nu
+    t1 = @view dsort[tocc]
+
+    # truncation from below
+    dl = d[N] * ϵ
+    Nl = N
+    while Nl < Ns + 1 && d[Nl] > dl
+        Nl += 1
+    end
+    tf = Nu + 1 : Nl - 1
+    t2 = @view dsort[tf]
+
+    t =  [t1; t2] # union of t1 and t2
+    B = @views F.R[t, :] * F.U[:, t]
+    P = @views B[tf, tocc] * inv(B[tocc, tocc])
+
+    Mocc = @views B[tocc, tocc] * Diagonal(F.D[t1]) + B[tocc, tf] * Diagonal(F.D[t2]) * P
+    Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[t2])
+
+    return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
+end
+
+function repartition(
+    Ns::Int64, N::Int64, F::UDT{T}, γ::Float64, ϵ::Float64
+) where {T<:FloatType}
+    d = F.D
+
+    # truncation from above
+    Nu = N - 1
+    while Nu > 0 && d[Nu + 1] / d[Nu] > γ
+        Nu -= 1
+    end
+    tocc = 1 : Nu
+
+    # truncation from below
+    dl = d[N] * ϵ
+    Nl = N
+    while Nl < Ns + 1 && d[Nl] > dl
+        Nl += 1
+    end
+    tf = Nu + 1 : Nl - 1
+
+    t = 1 : Nl - 1 # union of t1 and t2
+    B = @views F.T[t, :] * F.U[:, t]
+    P = @views B[tf, tocc] * inv(B[tocc, tocc])
+
+    Mocc = @views B[tocc, tocc] * Diagonal(F.D[tocc]) + B[tocc, tf] * Diagonal(F.D[tf]) * P
+    Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[tf])
+
+    return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
 end

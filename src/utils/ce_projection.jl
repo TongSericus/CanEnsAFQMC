@@ -9,8 +9,9 @@
 """
 
 function pf_projection(
-    Ns::Int64, N::Int64, expβϵ::Vector{T}, 
-    expiφ::Vector{ComplexF64}, returnFull::Bool
+    Ns::Int64, N::Int64, expβϵ::Vector{T}; 
+    returnFull::Bool = false,
+    expiφ = exp.(im * [2 * π * m / (prod(Ns) + 1) for m = 1 : prod(Ns) + 1])
 ) where {T<:FloatType}
     expβμ = fermilevel(expβϵ, N)
     η = [prod(1 .+ expiφ[m] / expβμ * expβϵ) for m = 1 : Ns + 1]
@@ -21,10 +22,10 @@ function pf_projection(
 end
 
 function occ_projection(
-    Ns::Int64, N::Int64, expβϵ::Vector{T}, 
-    expiφ::Vector{ComplexF64}
+    Ns::Int64, N::Int64, expβϵ::Vector{T};
+    expiφ = exp.(im * [2 * π * m / (prod(Ns) + 1) for m = 1 : prod(Ns) + 1])
 ) where {T<:FloatType}
-    expβμ, η, Z = pf_projection(Ns, N, expβϵ, expiφ, true)
+    expβμ, η, Z = pf_projection(Ns, N, expβϵ, returnFull=true, expiφ=expiφ)
     ñ = [expiφ[m] / expβμ * expβϵ[i] / (1 + expiφ[m] / expβμ * expβϵ[i]) for m = 1 : Ns + 1, i = 1 : Ns]
     n = [sum(quick_rotation(expiφ, N, true) .* ñ[:, i] .* η) * expβμ ^ N / (Ns + 1) / Z for i = 1 : Ns]
     return n

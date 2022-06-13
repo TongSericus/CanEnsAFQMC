@@ -4,7 +4,7 @@
     for CE and more general calculation purposes
     See (https://github.com/carstenbauer/StableDQMC.jl)
 """
-# QRCP decomposion
+### QRCP (column-pivoting) decomposion ###
 struct UDT{T<:FloatType} <: Factorization{T}
     U::Matrix{T}
     D::Vector{T}
@@ -26,24 +26,18 @@ LinearAlgebra.eigen(S::UDT) = let
     eigenS = eigen(Diagonal(S.D) * S.T * S.U, sortby = abs)
     LinearAlgebra.Eigen(eigenS.values, S.U * eigenS.vectors)
 end
-Base.inv(F::UDT) = inv!(similar(F.U), F)
-function inv!(res::Matrix{T}, F::UDT{T}) where {T<:FloatType}
-    tmp = similar(F.U)
-    ldiv!(tmp, lu(F.T), Diagonal(1 ./ F.D))
-    mul!(res, tmp, F.U')
-    return res
-end
 
+UDT(n::Int64) = UDT(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n))
 
 function UDT(A::Matrix{T}) where {T<:FloatType}
     F = qr!(A, Val(true))
-    n = size(A)
-    D = Vector{T}(undef, n[1])
+    n = size(F.R, 1)
+    D = Vector{T}(undef, n)
     R = F.R
-    @views F.p[F.p] = 1 : n[2]
+    @views F.p[F.p] = 1 : n
 
-    @inbounds for i in 1 : n[1]
-        D[i] = R[i, i]
+    @inbounds for i in 1 : n
+        D[i] = abs(R[i, i])
     end
     lmul!(Diagonal(1 ./ D), R)
     UDT(Matrix(F.Q), D, R[:, F.p])
@@ -59,7 +53,7 @@ function UDT(
     UDT(F.U, F.D, F.T * invP)
 end
 
-function QRCP_lmul(B::Matrix{T}, A::UDT) where {T<:FloatType}
+function QR_lmul(B::AbstractMatrix, A::UDT)
     """
     Compute B * UaDaTa
     """
@@ -69,7 +63,7 @@ function QRCP_lmul(B::Matrix{T}, A::UDT) where {T<:FloatType}
     UDT(F.U, F.D, F.T * A.T)
 end
 
-function QRCP_rmul(A::UDT, B::Matrix{T}) where {T<:FloatType}
+function QR_rmul(A::UDT, B::AbstractMatrix)
     """
     Compute UaDaTa * B
     """
@@ -79,7 +73,7 @@ function QRCP_rmul(A::UDT, B::Matrix{T}) where {T<:FloatType}
     UDT(A.U * F.U, F.D, F.T)
 end
 
-function QRCP_merge(A::UDT, B::UDT)
+function QR_merge(A::UDT, B::UDT)
     """
     Compute UaDaTa * UbDbTb
     """
@@ -90,7 +84,7 @@ function QRCP_merge(A::UDT, B::UDT)
     UDT(A.U * F.U, F.D, F.T * B.T)
 end
 
-function QRCP_sum(A::UDT, B::UDT)
+function QR_sum(A::UDT, B::UDT)
     """
     Compute UaDaTa + UbDbTb
     """
@@ -106,4 +100,102 @@ function QRCP_sum(A::UDT, B::UDT)
     mul!(mat1, Ua, U)
     mul!(mat2, T, Tb)
     UDT(mat1, D, mat2)
+end
+
+### Regular QR decomposion ###
+struct UDR{T<:FloatType} <: Factorization{T}
+    U::Matrix{T}
+    D::Vector{T}
+    R::Matrix{T}
+end
+Base.Matrix(F::UDR) = (F.U * Diagonal(F.D)) * F.R
+
+# iteration for destructuring into components
+Base.iterate(S::UDR) = (S.U, Val(:D))
+Base.iterate(S::UDR, ::Val{:D}) = (S.D, Val(:R))
+Base.iterate(S::UDR, ::Val{:R}) = (S.R, Val(:done))
+Base.iterate(S::UDR, ::Val{:done}) = nothing
+
+Base.similar(S::UDR) = UDR(similar(S.U), similar(S.D), similar(S.R))
+
+# stable linear algebra operations
+LinearAlgebra.det(S::UDR) = prod(S.D) * det(S.R) * det(S.U)
+LinearAlgebra.eigvals(S::UDR) = eigvals((Diagonal(S.D) * S.R) * S.U, sortby = abs)
+LinearAlgebra.eigen(S::UDR) = let 
+    eigenS = eigen((Diagonal(S.D) * S.R) * S.U, sortby = abs)
+    LinearAlgebra.Eigen(eigenS.values, S.U * eigenS.vectors)
+end
+
+UDR(n::Int64) = UDR{Float64}(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n))
+
+function UDR(A::Matrix{T}) where {T<:FloatType}
+    F = qr!(A)
+    n = size(A, 1)
+    D = Vector{T}(undef, n)
+    R = F.R
+
+    @inbounds for i in 1 : n
+        D[i] = abs(R[i, i])
+    end
+    lmul!(Diagonal(1 ./ D), R)
+    UDR(Matrix(F.Q), D, R)
+end
+
+function QR_lmul(B::AbstractMatrix, A::UDR)
+    """
+    Compute B * UaDaRa
+    """
+    mat = B * A.U
+    rmul!(mat, Diagonal(A.D))
+    F = UDR(mat)
+    UDR(F.U, F.D, F.R * A.R)
+end
+
+function QR_lmul!(B::AbstractMatrix, A::UDR)
+    """
+    Compute B * UaDaRa in-place
+    """
+    mat = B * A.U
+    rmul!(mat, Diagonal(A.D))
+    F = UDR(mat)
+    A.U .= F.U
+    A.D .= F.D
+    mat = F.R * A.R
+    A.R .= mat
+    return A
+end
+
+function QR_rmul(A::UDR, B::AbstractMatrix)
+    """
+    Compute UaDaRa * B
+    """
+    mat = A.R * B
+    lmul!(Diagonal(A.D), mat)
+    F = UDR(mat)
+    UDR(A.U * F.U, F.D, F.R)
+end
+
+function QR_rmul!(A::UDR, B::AbstractMatrix)
+    """
+    Compute UaDaRa * B in-place
+    """
+    mat = A.R * B
+    lmul!(Diagonal(A.D), mat)
+    F = UDR(mat)
+    mat = A.U * F.U
+    A.U .= mat
+    A.D .= F.D
+    A.R .= F.R
+    return A
+end
+
+function QR_merge(A::UDR, B::UDR)
+    """
+    Compute UaDaRa * UbDbRb
+    """
+    mat = A.R * B.U
+    lmul!(Diagonal(A.D), mat)
+    rmul!(mat, Diagonal(B.D))
+    F = UDR(mat)
+    UDR(A.U * F.U, F.D, F.R * B.R)
 end

@@ -20,10 +20,12 @@ export pf_recursion, occ_recursion,
     pf_projection, occ_projection
 include("./utils/ce_recursion.jl")
 include("./utils/ce_projection.jl")
-export UDT, QRCP_merge, QRCP_sum, QRCP_lmul, QRCP_rmul
+export UDT, UDR, UDTlr
+export QR_lmul, QR_lmul!, QR_rmul, QR_rmul!, QR_merge, QR_update
 include("./utils/linalg.jl")
+include("./utils/linalg_lowrank.jl")
 
-export Walker, ConstrainedWalker, TrialWalker, MatDecomp, QDT
+export Walker, Cluster, ConstrainedWalker
 include("./propagation/walker.jl")
 include("./propagation/operations.jl")
 export sweep!, sweep!_replica

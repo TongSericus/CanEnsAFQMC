@@ -7,7 +7,7 @@
     expβϵ -> exponentiated spectrum, i.e., exp(-βϵ)
 """
 function pf_recursion(
-    Ns::Int64, N::Int64, expβϵ::Vector{T}, returnFull::Bool
+    Ns::Int64, N::Int64, expβϵ::Vector{T}; returnFull::Bool = false
 ) where {T<:FloatType}
     """
     Recursive calculation of the partition function
@@ -38,7 +38,7 @@ function occ_recursion(
     n₁ = expβϵ / sum(expβϵ)
     N == 1 && return n₁
 
-    expβϵμ, P, Z = pf_recursion(Ns, N, expβϵ, true)
+    expβϵμ, P, Z = pf_recursion(Ns, N, expβϵ, returnFull=true)
     # num of energy levels below the Fermi level
     # use this formula to ensure complex conjugate pairs are in the same section
     N_below = sum(abs.(expβϵμ) .> 1)

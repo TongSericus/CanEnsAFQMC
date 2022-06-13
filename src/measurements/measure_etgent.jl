@@ -69,7 +69,7 @@ function measure_renyi2_entropy(
             GAc = QRCP_merge(GAc1, GAc2)
             γmn = det(QRCP_sum(GA, GAc))
             ηmn = prod(1 .+ expiφβμ1[m] * walker1.expβϵ) * prod(1 .+ expiφβμ2[n] * walker2.expβϵ)
-            expS2_temp = conj(system.expiφ[m])^N * conj(system.expiφ[n])^N * ηmn * γmn
+            expS2_temp = conj(quick_rotation(system.expiφ[m], N)) * conj(quick_rotation(system.expiφ[n], N)) * ηmn * γmn
             expS2 += expS2_temp
 
             # particle-number-resolved Renyi-2 entropy calculation

@@ -1,101 +1,90 @@
-function QRCP_update_lowrank(
-    Q::AbstractMatrix, D::AbstractMatrix, T::AbstractMatrix,
-    B::AbstractMatrix, direction::Char,
-    n::Int64, ξ::Float64
-)
-    """ 
-    Calculate Q', D', T' with Q'D'T' = QDT * B or B * QDT
+### QRCP decomposion with Truncation ###
+struct UDTlr{T<:FloatType} <: Factorization{T}
+    U::Matrix{T}
+    D::Vector{T}
+    T::Matrix{T}
+    t::UnitRange{Int64}
+end
+Base.Matrix(F::UDTlr) = @views (F.U[:, F.t] * Diagonal(F.D[F.t])) * F.T[F.t, :]
 
-    In-place operations on Q, D and T
+# iteration for destructuring into components
+Base.iterate(S::UDTlr) = (S.U, Val(:D))
+Base.iterate(S::UDTlr, ::Val{:D}) = (S.D, Val(:T))
+Base.iterate(S::UDTlr, ::Val{:T}) = (S.T, Val(:done))
+Base.iterate(S::UDTlr, ::Val{:done}) = nothing
 
-    # Arguments
-    direction -> which side of QDT would B be multiplied to
-    n -> filling (starting point for truncation from above)
-    ξ -> truncation threshold
-    """
+Base.similar(S::UDTlr) = UDTlr(similar(S.U), similar(S.D), similar(S.T), S.t)
 
-    # Q'D'T' = B * QDT
-    if direction == 'L'
-        BQD = (B * Q) * D
-        # column-pivoted QR (QRCP) decomposition
-        QRCP_BQD = LinearAlgebra.qr!(BQD, Val(true))
-        d = diag(QRCP_BQD.R)
-        nL = sum(abs.(d[n + 1 : end] / d[n]) .> ξ)
-        Q = QRCP_BQD.Q[:, 1 : n + nL]
-        D = Diagonal(d[1 : n + nL])
-        # D^-1 * R
-        temp = inv(D) * QRCP_BQD.R[1 : n + nL, :]
-        # D^-1 * R * P^T, smart permutation
-        temp[:, QRCP_BQD.p] = temp[:, :]
-        # D^-1 * R * P^T * T
-        T = temp * T
+# stable linear algebra operations
+LinearAlgebra.det(S::UDTlr) = @views prod(S.D[S.t]) * det(S.T[S.t, :] * S.U[:, S.t])
+LinearAlgebra.eigvals(S::UDTlr) = @views eigvals(S.T[S.t, :] * S.U[:, S.t] * Diagonal(S.D[S.t]), sortby = abs)
 
-        return Q, D, T
+UDTlr(n::Int64) = UDTlr(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n), 1:n)
 
-    # Q'D'T' = QDT * B
-    elseif direction == 'R'
-        DTB = D * (T * B)
-        # column-pivoted QR (QRCP) decomposition
-        QRCP_DTB = LinearAlgebra.qr!(DTB, Val(true))
-        d = diag(QRCP_DTB.R)
-        nR = sum(abs.(d[n + 1 : end] / d[n]) .> ξ)
-        Q = Q * QRCP_DTB.Q
-        D .= Diagonal(QRCP_DTB.R)
-        # D^-1 * R
-        temp = inv(D) * QRCP_DTB.R
-        # D^-1 * R * P^T, smart permutation
-        temp[:, QRCP_DTB.p] = temp[:, :]
-        T .= temp
-
-        return Q, D, T
-
-    else
-        @error "direction can only be 'L' or 'R'"
+function lowrank_truncation(D::Vector{T}, N::Int64, ϵ::Float64) where {T<:FloatType}
+    Ns = length(D)
+    # truncation from below
+    Dϵ = D[N] * ϵ
+    Nϵ = N
+    while Nϵ < Ns + 1 && D[Nϵ] > Dϵ
+        Nϵ += 1
     end
+    t = 1 : Nϵ - 1
 end
 
-function QRCP_update(
-    Q::AbstractMatrix, D::AbstractMatrix, T::AbstractMatrix,
-    B::AbstractMatrix, direction::Char
-)
-    """
-    Calculate Q', D', T' with Q'D'T' = UDT * B or B * UDT
+function UDTlr(
+    A::Matrix{T}, N::Int64, ϵ::Float64;
+    isTruc::Bool = false
+) where {T<:FloatType}
+    F = qr!(A, Val(true))
+    n = size(F.R)
+    D = Vector{T}(undef, n[1])
+    R = F.R
+    @views F.p[F.p] = 1 : n[2]
 
-    # Arguments
-    direction => which side of UDT would B be multiplied to
-    """
-
-    # Q'D'T' = B * UDT
-    if direction == 'L'
-        BQD = (B * Q) * D
-        # column-pivoted QR (QRCP) decomposition
-        QRCP_BQD = LinearAlgebra.qr!(BQD, Val(true))
-        D = Diagonal(QRCP_BQD.R)
-        # D^-1 * R
-        temp = inv(D) * QRCP_BQD.R
-        # D^-1 * R * P^T
-        temp[:, QRCP_BQD.p] = temp[:, :]
-        # D^-1 * R * P^T * T, smart permutation
-        T = temp * T
-
-        return QRCP_BQD.U, D, T
-
-    # Q'D'T' = UDT * B
-    elseif direction == 'R'
-        DTB = D * (T * B)
-        # column-pivoted QR (QRCP) decomposition
-        QRCP_DTB = LinearAlgebra.qr!(DTB, Val(true))
-        Q = Q * QRCP_DTB.U
-        D = Diagonal(QRCP_DTB.R)
-        # D^-1 * R
-        temp = inv(D) * QRCP_DTB.R
-        # D^-1 * R * P^T, smart permutation
-        temp[:, QRCP_DTB.p] = temp[:, :]
-        T = temp
-
-        return Q, D, T
-
-    else
-        @error "direction can only be 'L' or 'R'"
+    @inbounds for i in 1 : n[1]
+        D[i] = abs(R[i, i])
     end
+    lmul!(Diagonal(1 ./ D), R)
+    t = lowrank_truncation(D, N, ϵ)
+
+    isTruc ?
+        UDTlr(Matrix(F.Q)[:, t], D[t], (R[:, F.p])[t, :], t) :
+        UDTlr(Matrix(F.Q), D, R[:, F.p], t)
+end
+
+# convert regular decomposions to truncated ones
+function UDTlr(F::UDT{T}, N::Int64, ϵ::Float64; isTruc::Bool = false) where {T<:FloatType}
+    t = lowrank_truncation(F.D, N, ϵ)
+    isTruc ?
+        UDTlr(F.U[:, t], F.D[t], F.T[t, :], t) :
+        UDTlr(F.U, F.D, F.T, t)
+end
+
+function QR_lmul(B::AbstractMatrix, A::UDTlr, N::Int64, ϵ::Float64)
+    mat = B * A.U
+    rmul!(mat, Diagonal(A.D))
+    F = UDTlr(mat, N, ϵ)
+    T = F.T * A.T
+    UDTlr(F.U, F.D, T, F.t)
+end
+
+function QR_rmul(A::UDTlr, B::AbstractMatrix, N::Int64, ϵ::Float64)
+    mat = A.T * B
+    lmul!(Diagonal(A.D), mat)
+    F = UDTlr(mat, N, ϵ)
+    U = A.U * F.U
+
+    UDTlr(U, F.D, F.T, F.t)
+end
+
+function QR_merge(A::UDTlr, B::UDTlr, N::Int64, ϵ::Float64)
+    mat = @views A.T[A.t, :] * B.U[:, B.t]
+    lmul!(Diagonal(@view A.D[A.t]), mat)
+    rmul!(mat, Diagonal(@view B.D[B.t]))
+    F = UDTlr(mat, N, ϵ, isTruc=false)
+    U = (@view A.U[:, A.t]) * F.U
+    T = F.T * @view B.T[B.t, :]
+
+    UDTlr(U[:, F.t], F.D[F.t], T[F.t, :], F.t)
 end

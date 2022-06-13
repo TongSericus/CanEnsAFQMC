@@ -49,30 +49,24 @@ function kinetic_matrix_hubbard2D(NsX::Int64, NsY::Int64, t::Float64)
     return T
 end
 
-function auxfield_matrix_hubbard(σ::AbstractArray{Int64}, auxfield::Vector{Vector{Float64}})
-    nullfield = iszero.(σ)
+function auxfield_matrix_hubbard(σ::AbstractArray{Int64}, auxfield::Matrix{Float64})
     plusfield = isone.(σ)
     minusfield = isone.(-σ)
     
-    afmat_up = plusfield * auxfield[1][1] .+ 
-        minusfield * auxfield[2][1] .+
-        nullfield
-    afmat_dn = plusfield * auxfield[1][2] .+ 
-        minusfield * auxfield[2][2] .+
-        nullfield
+    afmat_up = plusfield * auxfield[1,1] .+ 
+        minusfield * auxfield[2,1]
+    afmat_dn = plusfield * auxfield[1,2] .+ 
+        minusfield * auxfield[2,2]
 
-    return Diagonal(afmat_up), Diagonal(afmat_dn)
+    return afmat_up, afmat_dn
 end
 
 function singlestep_matrix(σ::AbstractArray{Int64}, system::System)
     """
     Compute B = Bk/2 * Bv * Bk/2
     """
-    # Currently the trial propagator does not distinguish spins
-    sum(iszero.(σ)) == length(σ) && (B = [system.BT, system.BT])
-
     afmat = auxfield_matrix_hubbard(σ, system.auxfield)
-    B = [system.Bk * afmat[1] * system.Bk, system.Bk * afmat[2] * system.Bk]
+    B = [system.Bk * Diagonal(afmat[1]) * system.Bk, system.Bk * Diagonal(afmat[2]) * system.Bk]
 end
 
 function singlestep_matrix!(
@@ -81,12 +75,9 @@ function singlestep_matrix!(
     """
     Compute B = Bk/2 * Bv * Bk/2
     """
-    # Currently the trial propagator does not distinguish spins
-    sum(iszero.(σ)) == length(σ) && (B[1] .= system.BT; B[2] .= system.BT)
-
     afmat = auxfield_matrix_hubbard(σ, system.auxfield)
-    mul!(B[1], system.Bk, afmat[1] * system.Bk)
-    mul!(B[2], system.Bk, afmat[2] * system.Bk)
+    mul!(B[1], system.Bk, Diagonal(afmat[1]) * system.Bk)
+    mul!(B[2], system.Bk, Diagonal(afmat[2]) * system.Bk)
 end
 
 function generate_rmat(system::System)

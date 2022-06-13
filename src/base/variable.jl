@@ -5,33 +5,47 @@ struct QMC
     """
         All static parameters needed for QMC.
         
-        nprocs -> number of processors
-        nsamples -> number of Metropolis samples per processor
-        ntot_samples -> number of Metropolis samples
+        nsamples -> number of Metropolis samples
         nwarmups -> number of warm-up steps
         nblocks -> number of repeated random walks
-        nwalkers -> number of walkers per processor
-        ntot_walkers -> total number of walkers
+        nwalkers -> number of walkers
+        isCP -> Use Column-Pivoting QR decomposion
         stab_interval -> number of matrix multiplications before the stablization
         update_interval -> number of steps after which the population control and calibration is required
-        lowrank -> if enabling the low-rank truncation
-        lowrank_threshold -> low-rank truncation threshold (from above)
+        isLowrank -> if enabling the low-rank truncation
+        lrThld -> low-rank truncation threshold (from above)
     """
-    nprocs::Int64
     ### MCMC (Metropolis) ###
     nwarmups::Int64
     nsamples::Int64
-    ntotsamples::Int64
     ### Branching Ramdom Walk ###
     nblocks::Int64
     nwalkers::Int64
-    ntotwalkers::Int64
     ### Numerical Stablization ###
+    isCP::Bool
     stab_interval::Int64
+    K::Int64
     update_interval::Int64
-    ### Optimizations ###
+    ### Speed-ups ###
     isLowrank::Bool
-    lrThreshold::Float64
+    lrThld::Float64
+    isRepart::Bool
+    rpThld::Float64
+
+    function QMC(system::System, nwarmups::Int64, nsamples::Int64,
+        nblocks::Int64, nwalkers::Int64,
+        isCP::Bool, stab_interval::Int64, update_interval::Int64,
+        isLowrank::Bool, lrThld::Float64,
+        isRepart::Bool, rpThld::Float64
+    )
+        (system.L % stab_interval == 0) || @error "# of time slices should be divisible by the stablization interval"
+        return new(
+            nwarmups, nsamples,
+            nblocks, nwalkers,
+            isCP, stab_interval, div(system.L, stab_interval), update_interval,
+            isLowrank, lrThld, isRepart, rpThld
+        )
+    end
 end
 
 struct GeneralMeasure
@@ -66,5 +80,4 @@ struct EtgMeasure
             Aidx, length.(Aidx)
         )
     end
-
 end

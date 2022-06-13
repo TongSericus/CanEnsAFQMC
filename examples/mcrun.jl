@@ -13,30 +13,27 @@ const system = Hubbard(
     # chemical potential used for the GCE calculations
     0.5,
     ### AFQMC Constants ###
-    # imaginary time interval (Δτ)
-    0.01,
+    # inverse temperature (β)
+    1.0,
     # number of imaginary time slices L = β / Δτ
-    1000
+    100
 )
 
 const qmc = QMC(
-    # number of processors (not working for now)
-    1,
     ### MCMC (Metropolis) ###
+    system,
     # number of warm-up runs
     50,
     # number of Metropolis samples per processor
-    1e4,
-    # number of Metropolis samples (not working for now)
-    1,
+    Int64(1e4),
     ### Branching Ramdom Walk ###
     # number of repeated random walks
     1,
-    # number of walkers per processor
+    # number of walkers
     1,
-    # total number of walkers
-    20,
     ### Numerical Stablization ###
+    # using QRCP?
+    false,
     # stablization interval
     10,
     # control/calibration interval
@@ -65,11 +62,11 @@ function replica_run(worker_id, system, qmc)
 
     ### Monte Carlo Sampling ###
     ####### Warm-up Step #######
-    for i = 1 : qmc.nwarmups
+    for i in 1 : qmc.nwarmups
         # sweep the entire space-time lattice
         sweep!_replica(system, qmc, walker1, walker2)
     end
-    for i = 1 : qmc.nsamples
+    for i in 1 : qmc.nsamples
         sample = EtgSample{T, system.N[1] + 1, system.N[2] + 1}()
         sweep!_replica(system, qmc, walker1, walker2)
         walker1_profile = [WalkerProfile(system, walker1, 1), WalkerProfile(system, walker1, 2)]
@@ -84,6 +81,20 @@ function replica_run(worker_id, system, qmc)
             expS2_up, expS2n_up = measure_renyi2_entropy(system, etg.Aidx[k], 1, walker1_profile[1], walker2_profile[1])
             # spin-down sector
             expS2_dn, expS2n_dn = measure_renyi2_entropy(system, etg.Aidx[k], 2, walker1_profile[2], walker2_profile[2])
+            if sum(expS2n_up) / expS2_up - 1 > 1e-10
+                jldopen("../data/unstable_config$(k)_up.jld", "w") do file
+                    addrequire(file, CanEnsAFQMC)
+                    write(file, "walker_list", [walker1, walker2])
+                end
+                return nothing
+            end
+            if sum(expS2n_dn) / expS2_dn - 1 > 1e-10
+                jldopen("../data/unstable_config$(k)_dn.jld", "w") do file
+                    addrequire(file, CanEnsAFQMC)
+                    write(file, "walker_list", [walker1, walker2])
+                end
+                return nothing
+            end
             # merge
             push!(sample.expS2, expS2_up * expS2_dn)
             push!(sample.expS2n_up, expS2n_up)
