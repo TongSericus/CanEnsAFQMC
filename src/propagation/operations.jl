@@ -126,38 +126,33 @@ function calibrate(system::System, qmc::QMC, cluster::Cluster{T}, cidx::Int64) w
     Ns = system.V
 
     if qmc.isLowrank
-        FL, FR = [UDTlr(Ns), UDTlr(Ns)], [UDTlr(Ns), UDTlr(Ns)]
+        FL = [UDTlr(Ns), UDTlr(Ns)]
     elseif qmc.isCP
-        FL, FR = [UDT(Ns), UDT(Ns)], [UDT(Ns), UDT(Ns)]
+        FL = [UDT(Ns), UDT(Ns)]
     else
-        FL, FR = [UDR(Ns), UDR(Ns)], [UDR(Ns), UDR(Ns)]
+        FL = [UDR(Ns), UDR(Ns)]
     end
 
-    if cidx == 1
-        FL = partial_propagation(cluster, system, qmc, cidx + 1 : qmc.K)
-        return FL, FR
-    elseif cidx == qmc.K
-        FR = partial_propagation(cluster, system, qmc, 1 : cidx - 1)
-        return FL, FR
+    if cidx == qmc.K
+        return FL
     else
         FL = partial_propagation(cluster, system, qmc, cidx + 1 : qmc.K)
-        FR = partial_propagation(cluster, system, qmc, 1 : cidx - 1)
-        return FL, FR
+        return FL
     end
 end
 
 """
     Repartition scheme
 """
-function repartition(
-    F::UDTlr{T}, N::Int64, γ::Float64; isDiag::Bool = true
-) where {T<:FloatType}
+function repartition(F::UDTlr{T}, γ::Float64) where {T<:FloatType}
     d = F.D
+    l = length(F.t)
     # truncate from above
-    Nu = N - 1
-    while Nu > 0 && d[Nu + 1] / d[Nu] > γ
+    Nu = div(2 * l, 3)
+    while Nu > div(l, 3) && d[Nu + 1] / d[Nu] > γ
         Nu -= 1
     end
+    Nu < div(l, 3) && return eigvals(F)
     tocc = 1 : Nu
     tf = Nu + 1 : F.t.stop
 
@@ -166,8 +161,7 @@ function repartition(
     Mocc = @views B[tocc, tocc] * Diagonal(F.D[tocc]) + B[tocc, tf] * Diagonal(F.D[tf]) * P
     Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[tf])
 
-    isDiag && return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
-    return Mocc, Mf
+    return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
 end
 
 function repartition(

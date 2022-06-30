@@ -18,6 +18,10 @@ Base.similar(S::UDTlr) = UDTlr(similar(S.U), similar(S.D), similar(S.T), S.t)
 # stable linear algebra operations
 LinearAlgebra.det(S::UDTlr) = @views prod(S.D[S.t]) * det(S.T[S.t, :] * S.U[:, S.t])
 LinearAlgebra.eigvals(S::UDTlr) = @views eigvals(S.T[S.t, :] * S.U[:, S.t] * Diagonal(S.D[S.t]), sortby = abs)
+LinearAlgebra.eigen(S::UDTlr) = let 
+    eigenS = eigen(S.T * S.U * Diagonal(S.D), sortby = abs)
+    LinearAlgebra.Eigen(eigenS.values, inv(S.T) * eigenS.vectors)
+end
 
 UDTlr(n::Int64) = UDTlr(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n), 1:n)
 

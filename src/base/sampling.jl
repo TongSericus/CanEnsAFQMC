@@ -1,10 +1,8 @@
-Base.@kwdef struct RegSample{T <: FloatType, N, Nc}
-    sgn::Vector{T} = []
-    Ek::Vector{T} = []
-    Ep::Vector{T} = []
-    Etot::Vector{T} = []
-    nk::Vector{SizedVector{N, T, Vector{T}}} = []
-    Css::Vector{SizedVector{Nc, T, Vector{T}}} = []
+Base.@kwdef struct RegSample{T <: FloatType}
+    sgn::T
+    Ek::T
+    Ep::T
+    Etot::T
 end
 
 Base.@kwdef struct EtgSample{T<:FloatType, Nu, Nd}

@@ -34,7 +34,7 @@ include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")
 
 export WalkerProfile,
-    measure_energy_hubbard,
+    measure_energy,
     measure_renyi2_entropy
 include("./measurements/walkerprofile.jl")
 include("./measurements/measure_energy.jl")

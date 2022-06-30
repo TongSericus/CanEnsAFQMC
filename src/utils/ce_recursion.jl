@@ -15,6 +15,7 @@ function pf_recursion(
     N == 0 && return convert(T, 1.0)
     Z₁ = real(sum(expβϵ))
     N == 1 && return Z₁
+    N == Ns && return prod(expβϵ)
     
     # rescale spectrum
     expβμ = fermilevel(expβϵ, N)

@@ -42,7 +42,8 @@ const qmc = QMC(
     # low-rank truncation?
     false,
     # threshold for low-rank truncation
-    1e-3
+    1e-3,
+    false, 0.02
 )
 
 const etg = EtgMeasure(

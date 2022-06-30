@@ -1,6 +1,34 @@
 using CanEnsAFQMC, JLD, Measurements
 include("../src/analysis/reblocking.jl")
 
+function data_analysis(filenames::Vector{String})
+    sgn_array = Float64[]
+    Ek_array = Float64[]
+    Ep_array = Float64[]
+    Etot_array = Float64[]
+    for filename in filenames
+        data = JLD.load("../data/$filename", "sample_list")
+        for n = 1 : length(data)
+            s = data[n].sgn
+            push!(sgn_array, s)
+            push!(Ek_array, data[n].Ek * s)
+            push!(Ep_array, data[n].Ep * s)
+            push!(Etot_array, data[n].Etot * s)
+        end
+    end
+
+    sgn_avg, sgn_err = reblock(sgn_array)
+    println("Average Sign:", sgn_avg, "     ", "Error Bar:", sgn_err)
+
+    Ek_avg, Ek_err = reblock(Ek_array)
+    println("Average Kinetic Energy:", Ek_avg / sgn_avg, "     ", "Error Bar:", Ek_err)
+    Ep_avg, Ep_err = reblock(Ek_array)
+    println("Average Potential Energy:", Ep_avg / sgn_avg, "     ", "Error Bar:", Ep_err)
+
+    Ek_avg, Ek_err = reblock(Ek_array)
+    println("Average Kinetic Energy:", Etot_avg / sgn_avg, "     ", "Error Bar:", Etot_err)
+end
+
 function data_analysis_etgent(filenames::Vector{String})
     expS2_array = [Float64[] for _ = 1 : 6]
     expS2n_array = [Vector{Float64}[] for _ = 1 : 6]
