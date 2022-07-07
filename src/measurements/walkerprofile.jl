@@ -1,18 +1,18 @@
-struct WalkerProfile{T1,T2,T3 <: FloatType}
+struct WalkerProfile{W<:FloatType, E<:FloatType, G<:FloatType}
     """
         All the measurement-related information of a single walker
     """
-    weight::T1
-    expβϵ::Vector{T2}
-    P::Matrix{T2}
-    invP::Matrix{T2}
-    G::Matrix{T3}
+    weight::W
+    expβϵ::Vector{E}
+    P::Matrix{E}
+    invP::Matrix{E}
+    G::Matrix{G}
 end
 
 function WalkerProfile(system::System, walker::Walker, spin::Int64)
     expβϵ, P = eigen(walker.F[spin])
     invP = inv(P)
-    ni = occ_projection(system.V, system.N[spin], expβϵ)
+    ni = occ_recursion(system.V, system.N[spin], expβϵ)
     t = sum(real(ni) .< 1e-6) + 1 : length(ni)
     G = @views P[:, t] * Diagonal(ni[t]) * invP[t, :]
 

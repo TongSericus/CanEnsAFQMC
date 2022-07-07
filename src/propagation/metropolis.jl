@@ -56,7 +56,6 @@ function calc_trial(
     """
     Compute the weight of a trial configuration using a potential repartition scheme
     """
-    N = system.N
     Btmp = singlestep_matrix(σ, system)
     Utmp = [Btmp[1] * F1.U[:, F1.t], Btmp[2] * F2.U[:, F2.t]]
     Ftmp = [UDTlr(Utmp[1], F1.D, F1.T, F1.t), UDTlr(Utmp[2], F2.D, F2.T, F2.t)]
@@ -64,9 +63,9 @@ function calc_trial(
 end
 
 function update_cluster!(
-    walker::Walker{T1, T2, UDR{T2}, S}, system::System, qmc::QMC, 
+    walker::Walker{W, T, UDR{T}, C}, system::System, qmc::QMC, 
     cidx::Int64, F1::UDR{T}, F2::UDR{T}
-) where {T1<:FloatType, T2<:FloatType, T<:FloatType, S}
+) where {W<:FloatType, T<:FloatType, C}
     """
     cidx -> cluster index
     """
@@ -106,9 +105,9 @@ function update_cluster!(
 end
 
 function update_cluster!(
-    walker::Walker{T1, T2, UDT{T2}, S}, system::System, qmc::QMC, 
+    walker::Walker{W, T, UDT{T}, C}, system::System, qmc::QMC, 
     cidx::Int64, F1::UDT{T}, F2::UDT{T}
-) where {T1<:FloatType, T2<:FloatType, T<:FloatType, S}
+) where {W<:FloatType, T<:FloatType, C}
     """
     cidx -> cluster index
     """
@@ -148,9 +147,9 @@ function update_cluster!(
 end
 
 function update_cluster!(
-    walker::Walker{T1, T2, UDTlr{T2}, S}, system::System, qmc::QMC, 
+    walker::Walker{W, T, UDTlr{T}, C}, system::System, qmc::QMC, 
     cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {T1<:FloatType, T2<:FloatType, T<:FloatType, S}
+) where {W<:FloatType, T<:FloatType, C}
     k = qmc.stab_interval
     U1, D1, R1 = F1
     U2, D2, R2 = F2
@@ -191,10 +190,10 @@ end
 
 function sweep!(
     system::System, qmc::QMC, 
-    walker::Walker{T1, T2, UDR{T2}, C};
+    walker::Walker{W, T, UDR{T}, C};
     tmpL = deepcopy(walker.F),
     tmpR = [UDR(system.V), UDR(system.V)]
-) where {T1<:FloatType, T2<:FloatType, C}
+) where {W<:FloatType, T<:FloatType, C}
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -215,15 +214,15 @@ function sweep!(
         QR_lmul!(walker.cluster.B[qmc.K + cidx], tmpR[2])
     end
 
-    return Walker{T1, T2, UDR{T2}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
+    return Walker{W, T, UDR{T}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
 end
 
 function sweep!(
     system::System, qmc::QMC, 
-    walker::Walker{T1, T2, UDT{T2}, C};
+    walker::Walker{W, T, UDT{T}, C};
     tmpL = deepcopy(walker.F),
     tmpR = [UDT(system.V), UDT(system.V)]
-) where {T1<:FloatType, T2<:FloatType, C}
+) where {W<:FloatType, T<:FloatType, C}
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -244,15 +243,15 @@ function sweep!(
         tmpR[2] = QR_lmul(walker.cluster.B[qmc.K + cidx], tmpR[2])
     end
 
-    return Walker{T1, T2, UDT{T2}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
+    return Walker{W, T, UDT{T}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
 end
 
 function sweep!(
     system::System, qmc::QMC, 
-    walker::Walker{T1, T2, UDTlr{T2}, C};
+    walker::Walker{W, T, UDTlr{T}, C};
     tmpL = deepcopy(walker.F),
     tmpR = [UDTlr(system.V), UDTlr(system.V)]
-) where {T1<:FloatType, T2<:FloatType, C}
+) where {W<:FloatType, T<:FloatType, C}
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -278,5 +277,5 @@ function sweep!(
         tmpR[2] = QR_lmul(walker.cluster.B[qmc.K + cidx], tmpR[2], N[2], qmc.lrThld)
     end
 
-    return Walker{T1, T2, UDTlr{T2}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
+    return Walker{W, T, UDTlr{T}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
 end

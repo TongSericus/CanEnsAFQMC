@@ -21,14 +21,15 @@ export pf_recursion, occ_recursion,
 include("./utils/ce_recursion.jl")
 include("./utils/ce_projection.jl")
 export UDT, UDR, UDTlr
-export QR_lmul, QR_lmul!, QR_rmul, QR_rmul!, QR_merge, QR_update
+export QR_lmul, QR_lmul!, QR_rmul, QR_rmul!, 
+    QR_sum, QR_merge, QR_update
 include("./utils/linalg.jl")
 include("./utils/linalg_lowrank.jl")
 
 export Walker, Cluster, ConstrainedWalker
 include("./propagation/walker.jl")
 include("./propagation/operations.jl")
-export sweep!, sweep!_replica
+export sweep!
 include("./propagation/metropolis.jl")
 include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")

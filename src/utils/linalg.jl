@@ -31,12 +31,12 @@ UDT(n::Int64) = UDT(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n))
 
 function UDT(A::Matrix{T}) where {T<:FloatType}
     F = qr!(A, Val(true))
-    n = size(F.R, 1)
-    D = Vector{T}(undef, n)
+    n = size(F.R)
+    D = Vector{T}(undef, n[1])
     R = F.R
-    @views F.p[F.p] = 1 : n
+    @views F.p[F.p] = 1 : n[2]
 
-    @inbounds for i in 1 : n
+    @inbounds for i in 1 : n[1]
         D[i] = abs(R[i, i])
     end
     lmul!(Diagonal(1 ./ D), R)

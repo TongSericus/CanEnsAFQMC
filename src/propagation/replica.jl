@@ -15,38 +15,48 @@ function heatbath_sampling(weights::Vector{Float64})
     return idx
 end
 
-function update_cluster!_replica(
-    walker1::Walker, walker2::Walker, system::System, qmc::QMC, 
-    cidx::Int64, F1::Vector{UDR{T1}}, F2::Vector{UDR{T2}}
-) where {T1<:FloatType, T2<:FloatType}
+function update_cluster!(
+    walker1::Walker{W, T1, UDTlr{T1}, C},
+    walker2::Walker{W, T2, UDTlr{T2}, C}, 
+    system::System, qmc::QMC, 
+    cidx::Int64, F1::Vector{UDTlr{T1}}, F2::Vector{UDTlr{T2}}
+) where {W<:FloatType, T1<:FloatType, T2<:FloatType, C}
     """
     cidx -> cluster index
     """
     k = qmc.stab_interval
+    Bl1 = Cluster(system.V, 2 * k)
+    Bl2 = Cluster(system.V, 2 * k)
 
     U1 = [F1[1].U, F1[2].U]
-    R1 = [F1[1].R * walker1.cluster.B[cidx], F1[2].R * walker1.cluster.B[qmc.K + cidx]]
-    Bl1 = Cluster(system.V, 2 * k)
+    R1 = [F1[1].T * walker1.cluster.B[cidx], F1[2].T * walker1.cluster.B[qmc.K + cidx]]
 
     U2 = [F2[1].U, F2[2].U]
-    R2 = [F2[1].R * walker2.cluster.B[cidx], F2[2].R * walker2.cluster.B[qmc.K + cidx]]
-    Bl2 = Cluster(system.V, 2 * k)
+    R2 = [F2[1].T * walker2.cluster.B[cidx], F2[2].T * walker2.cluster.B[qmc.K + cidx]]
 
     for i in 1 : k
         σ1 = @view walker1.auxfield[:, (cidx - 1) * k + i]
         Bl1.B[i], Bl1.B[k + i] = singlestep_matrix(σ1, system)
-        R1 = [R1[1] * inv(Bl1.B[i]), R1[2] * inv(Bl1.B[k + i])]
+        R1 .*= [inv(Bl1.B[i]), inv(Bl1.B[k + i])]
 
         σ2 = @view walker2.auxfield[:, (cidx - 1) * k + i]
         Bl2.B[i], Bl2.B[k + i] = singlestep_matrix(σ2, system)
-        R2 = [R2[1] * inv(Bl2.B[i]), R2[2] * inv(Bl2.B[k + i])]
+        R2 .*= [inv(Bl2.B[i]), inv(Bl2.B[k + i])]
 
         for j in 1 : system.V
             σ1[j] *= -1
-            Z1 = calc_trial(σ1, system, UDR(U1[1], F1[1].D, R1[1]), UDR(U1[2], F1[2].D, R1[2]))
+            Z1 = calc_trial(
+                σ1, system, qmc,
+                UDTlr(U1[1], F1[1].D, R1[1], F1[1].t), 
+                UDTlr(U1[2], F1[2].D, R1[2], F1[2].t)
+            )
 
             σ2[j] *= -1
-            Z2 = calc_trial(σ2, system, UDR(U2[1], F2[1].D, R2[1]), UDR(U2[2], F2[2].D, R2[2]))
+            Z2 = calc_trial(
+                σ2, system, qmc,
+                UDTlr(U2[1], F2[1].D, R2[1], F2[1].t), 
+                UDTlr(U2[2], F2[2].D, R2[2], F2[2].t)
+            )
 
             r1 = (Z1[1] / walker1.weight[1]) * (Z1[2] / walker1.weight[2])
             r2 = (Z2[1] / walker2.weight[1]) * (Z2[2] / walker2.weight[2])
@@ -71,10 +81,10 @@ function update_cluster!_replica(
             end
         end
         Bl1.B[i], Bl1.B[k + i] = singlestep_matrix(σ1, system)
-        U1 = [Bl1.B[i] * U1[1], Bl1.B[k + i] * U1[2]]
+        U1 = [Bl1.B[i], Bl1.B[k + i]] .* U1
 
         Bl2.B[i], Bl2.B[k + i] = singlestep_matrix(σ2, system)
-        U2 = [Bl2.B[i] * U2[1], Bl2.B[k + i] * U2[2]]
+        U2 = [Bl2.B[i], Bl2.B[k + i]] .* U2
     end
 
     walker1.cluster.B[cidx] = prod(Bl1, k : -1 : 1)
@@ -86,49 +96,53 @@ function update_cluster!_replica(
     return nothing
 end
 
-function sweep!_replica(
+function sweep!(
     system::System, qmc::QMC, 
-    walker1::Walker, walker2::Walker;
+    walker1::Walker{W, T1, UDTlr{T1}, C}, 
+    walker2::Walker{W, T2, UDTlr{T2}, C};
     tmpL1 = deepcopy(walker1.F),
-    tmpR1 = [UDR(system.V), UDR(system.V)],
+    tmpR1 = [UDTlr(system.V), UDTlr(system.V)],
     tmpL2 = deepcopy(walker2.F),
-    tmpR2 = [UDR(system.V), UDR(system.V)]
-)
+    tmpR2 = [UDTlr(system.V), UDTlr(system.V)]
+) where {W<:FloatType, T1<:FloatType, T2<:FloatType, C}
     """
     Sweep two copies of walker over the entire space-time lattice
     """
+    N = system.N
     calib_counter = 0
     for cidx in 1 : qmc.K
-        QR_rmul!(tmpL1[1], inv(walker1.cluster.B[cidx]))
-        QR_rmul!(tmpL1[2], inv(walker1.cluster.B[qmc.K + cidx]))
+        tmpL1[1] = QR_rmul(tmpL1[1], inv(walker1.cluster.B[cidx]), N[1], qmc.lrThld)
+        tmpL1[2] = QR_rmul(tmpL1[2], inv(walker1.cluster.B[qmc.K + cidx]), N[2], qmc.lrThld)
 
-        QR_rmul!(tmpL2[1], inv(walker2.cluster.B[cidx]))
-        QR_rmul!(tmpL2[2], inv(walker2.cluster.B[qmc.K + cidx]))
+        tmpL2[1] = QR_rmul(tmpL2[1], inv(walker2.cluster.B[cidx]), N[1], qmc.lrThld)
+        tmpL2[2] = QR_rmul(tmpL2[2], inv(walker2.cluster.B[qmc.K + cidx]), N[2], qmc.lrThld)
 
         calib_counter += 1
         if calib_counter == qmc.update_interval
-            calibrate!(system, qmc, walker1.cluster,
-                tmpL1, tmpR1, cidx
-            )
-            calibrate!(system, qmc, walker2.cluster,
-                tmpL2, tmpR2, cidx
-            )
+            tmpL1 = calibrate(system, qmc, walker1.cluster, cidx)
+            tmpL2 = calibrate(system, qmc, walker2.cluster, cidx)
             calib_counter = 0
         end
 
-        F1 = [QR_merge(tmpR1[1], tmpL1[1]), QR_merge(tmpR1[2], tmpL1[2])]
-        F2 = [QR_merge(tmpR2[1], tmpL2[1]), QR_merge(tmpR2[2], tmpL2[2])]
-        update_cluster!_replica(walker1, walker2, system, qmc, cidx, F1, F2)
+        F1 = [
+            QR_merge(tmpR1[1], tmpL1[1], N[1], qmc.lrThld), 
+            QR_merge(tmpR1[2], tmpL1[2], N[2], qmc.lrThld)
+        ]
+        F2 = [
+            QR_merge(tmpR2[1], tmpL2[1], N[1], qmc.lrThld), 
+            QR_merge(tmpR2[2], tmpL2[2], N[2], qmc.lrThld)
+        ]
+        update_cluster!(walker1, walker2, system, qmc, cidx, F1, F2)
         
-        QR_lmul!(walker1.cluster.B[cidx], tmpR1[1])
-        QR_lmul!(walker1.cluster.B[qmc.K + cidx], tmpR1[2])
+        tmpR1[1] = QR_lmul(walker1.cluster.B[cidx], tmpR1[1], N[1], qmc.lrThld)
+        tmpR1[2] = QR_lmul(walker1.cluster.B[qmc.K + cidx], tmpR1[2], N[2], qmc.lrThld)
 
-        QR_lmul!(walker2.cluster.B[cidx], tmpR2[1])
-        QR_lmul!(walker2.cluster.B[qmc.K + cidx], tmpR2[2])
+        tmpR2[1] = QR_lmul(walker2.cluster.B[cidx], tmpR2[1], N[1], qmc.lrThld)
+        tmpR2[2] = QR_lmul(walker2.cluster.B[qmc.K + cidx], tmpR2[2], N[2], qmc.lrThld)
     end
 
-    update_matrices!(walker1.F, tmpR1)
-    update_matrices!(walker2.F, tmpR2)
+    walker1 = Walker{T1, T2, UDTlr{T2}, C}(walker1.weight, walker1.auxfield, tmpR1, walker1.cluster)
+    walker2 = Walker{T1, T2, UDTlr{T2}, C}(walker2.weight, walker2.auxfield, tmpR2, walker2.cluster)
 
     return walker1, walker2
 end

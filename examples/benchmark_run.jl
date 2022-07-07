@@ -9,23 +9,23 @@ const system = Hubbard(
     # hopping constant t
     1.0,
     # on-site repulsion constant U
-    2.0,
+    4.0,
     # chemical potential used for the GCE calculations
     0.5,
     ### AFQMC Constants ###
     # inverse temperature (β)
-    5.0,
+    10.0,
     # number of imaginary time slices L = β / Δτ
-    100
+    200
 )
 
 const qmc = QMC(
     ### MCMC (Metropolis) ###
     system,
     # number of warm-up runs
-    50,
+    10,
     # number of Metropolis samples per processor
-    Int64(1e4),
+    Int64(10),
     ### Branching Ramdom Walk ###
     # number of repeated random walks
     1,
