@@ -1,5 +1,13 @@
-Base.@kwdef struct RegSample{T <: FloatType}
+struct RegSample{T<:FloatType}
     sgn::T
+    Ek::T
+    Ep::T
+    Etot::T
+end
+
+struct GCESample{T<:FloatType}
+    sgn::T
+    N::T
     Ek::T
     Ep::T
     Etot::T

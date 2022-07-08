@@ -8,7 +8,7 @@ include("./base/constants.jl")
 
 export QMC, GeneralMeasure, EtgMeasure
 export System, Hubbard
-export RegSample, EtgSample
+export RegSample, GCESample, EtgSample
 include("./base/systems.jl")
 include("./base/matrix_generator.jl")
 include("./base/variable.jl")
@@ -33,6 +33,11 @@ export sweep!
 include("./propagation/metropolis.jl")
 include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")
+
+export GCEWalker, MuTuner, dynamical_tuning
+include("./gce/walker.jl")
+include("./gce/propagation.jl")
+include("./gce/dynamical_tuning.jl")
 
 export WalkerProfile,
     measure_energy,

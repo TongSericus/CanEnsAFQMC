@@ -20,6 +20,30 @@ function WalkerProfile(system::System, walker::Walker, spin::Int64)
     return WalkerProfile{ComplexF64, eltype(expβϵ), eltype(G)}(walker.weight[spin], expβϵ, P, invP, G)
 end
 
+function WalkerProfile(system::System, walker::GCEWalker, spin::Int64)
+    expβϵ, P = eigen(walker.F[spin])
+    invP = inv(P)
+    λ = expβϵ * exp(system.β * system.μ)
+    ni = λ ./ (1 .+ λ)
+    t = sum(real(ni) .< 1e-6) + 1 : length(ni)
+    G = @views P[:, t] * Diagonal(ni[t]) * invP[t, :]
+
+    system.isReal && return WalkerProfile{Float64, eltype(expβϵ), Float64}(walker.sgn[spin] * walker.logweight[spin], expβϵ, P, invP, real(G))
+    return WalkerProfile{ComplexF64, eltype(expβϵ), eltype(G)}(walker.sgn[spin] * walker.logweight[spin], expβϵ, P, invP, G)
+end
+
+function WalkerProfile(system::System, walker::GCEWalker, μ::Float64, spin::Int64)
+    expβϵ, P = eigen(walker.F[spin])
+    invP = inv(P)
+    λ = expβϵ * exp(system.β * μ)
+    ni = λ ./ (1 .+ λ)
+    t = sum(real(ni) .< 1e-6) + 1 : length(ni)
+    G = @views P[:, t] * Diagonal(ni[t]) * invP[t, :]
+
+    system.isReal && return WalkerProfile{Float64, eltype(expβϵ), Float64}(walker.sgn[spin] * walker.logweight[spin], expβϵ, P, invP, real(G))
+    return WalkerProfile{ComplexF64, eltype(expβϵ), eltype(G)}(walker.sgn[spin] * walker.logweight[spin], expβϵ, P, invP, G)
+end
+
 function ovlp_coeff(
     P::Matrix{T}, invP::Matrix{T}, 
     i::Int64, j::Int64, k::Int64, l::Int64

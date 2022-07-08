@@ -28,7 +28,7 @@ mutable struct Hubbard <: System
     t::Float64
     U::Float64
     T::Array{Float64,2}
-    expβμ::Float64
+    μ::Float64
     iφ::Vector{ComplexF64}
     ### AFQMC Constants ###
     β::Float64
@@ -61,7 +61,7 @@ mutable struct Hubbard <: System
         return new(
             isReal,
             Ns, prod(Ns), N, t, U, T, 
-            exp(Δτ * L * μ), iφ, 
+            μ, iφ, 
             β, L, auxfield,
             exp(-T * Δτ/2), exp(-T * Δτ), inv(exp(-T * Δτ))
         )
