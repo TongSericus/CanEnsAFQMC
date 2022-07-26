@@ -49,10 +49,10 @@ function dynamical_tuning(
         varNt = Nsqdt_avg - Nt_avg^2
         κ_fluc = system.β * varNt
         κ_min = α / sqrt(length(tuner.μt) + 1)
-        if varμt ==0
+        if varμt <= 0
             κ_max = system.V
         else
-            κ_max = sqrt(varNt / varμt)
+            κ_max = sqrt(abs(varNt / varμt))
         end
         κt = max(κ_min, min(κ_max, κ_fluc))
 

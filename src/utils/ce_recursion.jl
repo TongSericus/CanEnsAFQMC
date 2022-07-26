@@ -36,6 +36,7 @@ function occ_recursion(
     Recursive calculation of the occupation number (in the momentum space)
     """
     N == 0 && return zeros(T, Ns)
+    N == Ns && return ones(T, Ns)
     n₁ = expβϵ / sum(expβϵ)
     N == 1 && return n₁
 

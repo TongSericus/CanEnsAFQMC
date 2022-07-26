@@ -34,10 +34,9 @@ include("./propagation/metropolis.jl")
 include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")
 
-export GCEWalker, MuTuner, dynamical_tuning
+export GCEWalker
 include("./gce/walker.jl")
 include("./gce/propagation.jl")
-include("./gce/dynamical_tuning.jl")
 
 export WalkerProfile,
     measure_energy,
@@ -45,5 +44,8 @@ export WalkerProfile,
 include("./measurements/walkerprofile.jl")
 include("./measurements/measure_energy.jl")
 include("./measurements/measure_etgent.jl")
+
+export MuTuner, dynamical_tuning
+include("./gce/dynamical_tuning.jl")
 
 end

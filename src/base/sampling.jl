@@ -1,16 +1,7 @@
-struct RegSample{T<:FloatType}
+struct RegSample{T<:FloatType, Ns}
     sgn::T
-    Ek::T
-    Ep::T
-    Etot::T
-end
-
-struct GCESample{T<:FloatType}
-    sgn::T
-    N::T
-    Ek::T
-    Ep::T
-    Etot::T
+    G_up::SizedMatrix{Ns, Ns, ComplexF64}
+    G_dn::SizedMatrix{Ns, Ns, ComplexF64}
 end
 
 Base.@kwdef struct EtgSample{T<:FloatType, Nu, Nd}
