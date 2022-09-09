@@ -3,7 +3,7 @@
 """
 
 function initial_propagation(
-    auxfield::Matrix{Int64}, system::System, qmc::QMC
+    auxfield::Matrix{Int64}, system::System, qmc::QMC; K = qmc.K
 )
     """
     Stable propagation over the entire space-time auxiliary field
@@ -26,20 +26,20 @@ function initial_propagation(
     end
 
     B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
-    MP = Cluster(Ns, qmc.K * 2)
+    MP = Cluster(Ns, K * 2)
 
-    for i in 1 : qmc.K
+    for i in 1 : K
 
         for j = 1 : qmc.stab_interval
             @views σ = auxfield[:, (i - 1) * qmc.stab_interval + j]
             singlestep_matrix!(B, σ, system)
-            MP.B[i] = B[1] * MP.B[i]                    # spin-up
-            MP.B[qmc.K + i] = B[2] * MP.B[qmc.K + i]    # spin-down
+            MP.B[i] = B[1] * MP.B[i]            # spin-up
+            MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
         end
 
         qmc.isLowrank ? 
-            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[qmc.K + i], F[2], system.N[2], qmc.lrThld)] :
-            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[qmc.K + i], F[2])]
+            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[K + i], F[2], system.N[2], qmc.lrThld)] :
+            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[K + i], F[2])]
 
     end
 
@@ -70,7 +70,7 @@ function full_propagation(MP::Cluster{T}, system::System, qmc::QMC) where T
     return F
 end
 
-function partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::UnitRange{Int64}) where T
+function partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::Vector{Int64}) where T
     """
     Propagation over the space-and-partial-time field
     for calibration and test purposes
@@ -136,7 +136,7 @@ function calibrate(system::System, qmc::QMC, cluster::Cluster{T}, cidx::Int64) w
     if cidx == qmc.K
         return FL
     else
-        FL = partial_propagation(cluster, system, qmc, cidx + 1 : qmc.K)
+        FL = partial_propagation(cluster, system, qmc, collect(cidx + 1 : qmc.K))
         return FL
     end
 end

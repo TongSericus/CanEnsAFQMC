@@ -19,6 +19,8 @@ Base.iterate(S::UDT, ::Val{:done}) = nothing
 
 Base.similar(S::UDT) = UDT(similar(S.U), similar(S.D), similar(S.T))
 
+Base.Matrix(S::UDT) = (S.U * Diagonal(S.D)) * S.T
+
 # stable linear algebra operations
 LinearAlgebra.det(S::UDT) = prod(S.D) * det(S.U) * det(S.T)
 LinearAlgebra.eigvals(S::UDT) = eigvals(Diagonal(S.D) * S.T * S.U, sortby = abs)

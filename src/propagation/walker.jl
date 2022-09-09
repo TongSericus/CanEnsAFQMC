@@ -20,23 +20,22 @@ struct Walker{T1<:FloatType, T2<:FloatType, F<:Factorization{T2}, T}
     cluster::Cluster{T}
 end
 
-function Walker(system::System, qmc::QMC)
+function Walker(system::System, qmc::QMC; auxfield = 2 * (rand(system.V, system.L) .< 0.5) .- 1)
     """
     Initialize a walker with a random configuration
     """
-    # initialize a random field configuration
-    auxfield = 2 * (rand(system.V, system.L) .< 0.5) .- 1
-    F, cluster = initial_propagation(auxfield, system, qmc)
+    L = size(auxfield)[2]
+    (L % qmc.stab_interval == 0) || @error "# of time slices should be divisible by the stablization interval"
+    F, cluster = initial_propagation(auxfield, system, qmc, K = div(L, qmc.stab_interval))
     # diagonalize the decomposition
     λ = [eigvals(F[1]), eigvals(F[2])]
     # calculate the statistical weight
-    Z = [
+    logZ = [
         pf_recursion(length(λ[1]), system.N[1], λ[1]),
         pf_recursion(length(λ[2]), system.N[2], λ[2])
     ]
 
-    system.isReal && return Walker{Float64, eltype(F[1].U), typeof(F[1]), eltype(cluster.B)}(real(Z), auxfield, F, cluster)
-    return Walker{ComplexF64, eltype(F[1].U), typeof(F[1]), eltype(cluster.B)}(Z, auxfield, F, cluster)
+    return Walker{eltype(logZ), eltype(F[1].U), typeof(F[1]), eltype(cluster.B)}(logZ, auxfield, F, cluster)
 end
 
 struct ConstrainedWalker{T1<:FloatType, T2<:FloatType}

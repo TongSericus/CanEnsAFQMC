@@ -12,7 +12,6 @@ function calc_pf(
         λocc, λf = repartition(F2, rpThld)
         Z2 = pf_recursion(length(F2.t), system.N[2], vcat(λf, λocc))
 
-        system.isReal && return real([Z1, Z2])
         return [Z1, Z2]
     else
         λ = [eigvals(F1), eigvals(F2)]
@@ -21,7 +20,6 @@ function calc_pf(
             pf_recursion(length(λ[2]), system.N[2], λ[2])
         ]
 
-        system.isReal && return real(Z)
         return Z
     end
 end
@@ -85,9 +83,10 @@ function update_cluster!(
         for j in 1 : system.V
             σ[j] *= -1
             Z = calc_trial(σ, system, UDR(U1, D1, R1), UDR(U2, D2, R2))
-            r = (Z[1] / walker.weight[1]) * (Z[2] / walker.weight[2])
-            accept = abs(r) / (1 + abs(r))
-            if rand() < accept
+            r = sum(Z) - sum(walker.weight)
+            r = abs(exp(r))
+            p = r / (1 + r)
+            if rand() < p
                 walker.weight .= Z
             else
                 σ[j] *= -1
@@ -127,9 +126,10 @@ function update_cluster!(
         for j in 1 : system.V
             σ[j] *= -1
             Z = calc_trial(σ, system, UDT(U1, D1, R1), UDT(U2, D2, R2))
-            r = (Z[1] / walker.weight[1]) * (Z[2] / walker.weight[2])
-            accept = abs(r) / (1 + abs(r))
-            if rand() < accept
+            r = sum(Z) - sum(walker.weight)
+            r = abs(exp(r))
+            p = r / (1 + r)
+            if rand() < p
                 walker.weight .= Z
             else
                 σ[j] *= -1
@@ -169,9 +169,11 @@ function update_cluster!(
                 σ, system, qmc,
                 UDTlr(U1, D1, R1, F1.t), UDTlr(U2, D2, R2, F2.t), 
             )
-            r = (Z[1] / walker.weight[1]) * (Z[2] / walker.weight[2])
-            accept = abs(r) / (1 + abs(r))
-            if rand() < accept
+            r = sum(Z) - sum(walker.weight)
+            r = abs(exp(r))
+            p = r / (1 + r)
+            #p = abs(r)
+            if p > 1 || rand() < p
                 walker.weight .= Z
             else
                 σ[j] *= -1

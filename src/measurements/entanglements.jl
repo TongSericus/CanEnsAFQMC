@@ -25,14 +25,14 @@ function eigvals_squaredEtgHam(
 end
 
 function Fourier_weights(
-    Ns::Int64, N::Int64, iφ::Vector{ComplexF64}, expβϵ::Vector{T}, Z::E
+    Ns::Int64, N::Int64, iφ::Vector{ComplexF64}, expβϵ::Vector{T}, logZ::E
 ) where {T<:FloatType, E<:FloatType}
     """
     Compute the Fourier coefficients in the logrithmic form
     to avoid numerical overflows
     """
-    sgnZ = sign(Z)
-    logZ = log(abs(Z))
+    sgnZ = prod(exp.(imag(logZ)im))
+    logZ = abs(logZ)
 
     iφN = iφ * N
     expβμ = fermilevel(expβϵ, N)

@@ -1,7 +1,7 @@
 module CanEnsAFQMC
 
 using Reexport: @reexport
-@reexport using LinearAlgebra, Statistics, Random, StaticArrays, FFTW
+@reexport using DoubleFloats, LinearAlgebra, Statistics, Random, StaticArrays, FFTW
 
 export FloatType
 include("./base/constants.jl")
@@ -34,16 +34,19 @@ include("./propagation/metropolis.jl")
 include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")
 
-export GCEWalker
+export GCEWalker, computeG, unshiftG
 include("./gce/walker.jl")
+include("./gce/operations.jl")
 include("./gce/propagation.jl")
 
 export WalkerProfile,
     measure_energy,
-    measure_renyi2_entropy
+    measure_renyi2_entropy,
+    measure_transition_probability
 include("./measurements/walkerprofile.jl")
-include("./measurements/measure_energy.jl")
-include("./measurements/measure_etgent.jl")
+include("./measurements/energy.jl")
+include("./measurements/entanglements.jl")
+include("./measurements/transition_probability.jl")
 
 export MuTuner, dynamical_tuning
 include("./gce/dynamical_tuning.jl")

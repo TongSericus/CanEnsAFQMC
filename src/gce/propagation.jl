@@ -1,187 +1,146 @@
-function calc_trial_gce(
-    σ::AbstractArray{Int64}, system::System, F1::UDTlr{T}, F2::UDTlr{T}
-) where {T<:FloatType}
-    Btmp = singlestep_matrix(σ, system)
-    Utmp = [Btmp[1] * F1.U[:, F1.t], Btmp[2] * F2.U[:, F2.t]]
-    Ftmp = [UDTlr(Utmp[1], F1.D, F1.T, F1.t), UDTlr(Utmp[2], F2.D, F2.T, F2.t)]
-    λ = [eigvals(Ftmp[1]), eigvals(Ftmp[2])]
-
-    sgn1, logZ1 = calc_pf(system.β, system.μ, λ[1])
-    sgn2, logZ2 = calc_pf(system.β, system.μ, λ[2])
-    
-    system.isReal && return real([sgn1, sgn2]), [logZ1, logZ2]
-    return [sgn1, sgn2], [logZ1, logZ2]
-end
+convert_auxidx(σ::Int64) = Int64((σ + 1) / 2 + 1)
 
 function update_cluster!(
-    walker::GCEWalker{W, T, UDTlr{T}, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {W<:FloatType, T<:FloatType, C}
+    walker::GCEWalker{T, C}, 
+    system::System, qmc::QMC, cidx::Int64
+) where {T<:FloatType, C}
     k = qmc.stab_interval
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    R1 = R1 * walker.cluster.B[cidx]
-    R2 = R2 * walker.cluster.B[qmc.K + cidx]
     Bl = Cluster(system.V, 2 * k)
+    G = walker.G
+    α = walker.α
 
     for i in 1 : k
-        σ = @view walker.auxfield[:, (cidx - 1) * k + i]
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        R1 = R1 * inv(Bl.B[i])
-        R2 = R2 * inv(Bl.B[k + i])
-
+        l = (cidx - 1) * k + i
+        @views σ = convert_auxidx.(walker.auxfield[:, l])
         for j in 1 : system.V
-            σ[j] *= -1
-            sgn, logZ = calc_trial_gce(
-                σ, system,
-                UDTlr(U1, D1, R1, F1.t), UDTlr(U2, D2, R2, F2.t), 
-            )
-            r = (logZ[1] - walker.logweight[1]) + (logZ[2] - walker.logweight[2])
-            accept = exp(r) / (1 + exp(r))
-            if rand() < accept
-                walker.sgn .= sgn
-                walker.logweight .= logZ
-            else
-                σ[j] *= -1
+            # ratio of determinants
+            d_up = 1 + α[1, σ[j]] * (1 - G[1][j, j])
+            d_dn = 1 + α[2, σ[j]] * (1 - G[2][j, j])
+
+            r = abs(d_up * d_dn)
+            p = r / (1 + r)
+
+            if rand() < p
+                walker.auxfield[j, l] *= -1
+                G[1] = updateG(G[1], α[1, σ[j]], d_up, j)
+                G[2] = updateG(G[2], α[2, σ[j]], d_dn, j)
             end
         end
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
-    end
+        Bl.B[i], Bl.B[k + i] = singlestep_matrix(walker.auxfield[:, l], system)
 
+        # wrap the Green's function
+        B = (system.Bk) * Bl.B[i] * inv(system.Bk)
+        G[1] = B * G[1] * inv(B)
+        B = (system.Bk) * Bl.B[k + i] * inv(system.Bk)
+        G[2] = B * G[2] * inv(B)
+    end
     walker.cluster.B[cidx] = prod(Bl, k : -1 : 1)
     walker.cluster.B[qmc.K + cidx] = prod(Bl, 2*k : -1 : k+1)
 
-    return nothing
+    # wrap is not stable and G needs to be periodically recomputed
+    recomputeG(system, qmc, walker, cidx)
 end
 
 function sweep!(
     system::System, qmc::QMC, 
-    walker::GCEWalker{W, T, UDTlr{T}, C};
-    tmpL = deepcopy(walker.F),
-    tmpR = [UDTlr(system.V), UDTlr(system.V)]
-) where {W<:FloatType, T<:FloatType, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    N = system.N
-    calib_counter = 0
+    walker::GCEWalker{T, C}
+) where {T<:FloatType, C}
     for cidx in 1 : qmc.K
-        tmpL[1] = QR_rmul(tmpL[1], inv(walker.cluster.B[cidx]), N[1], qmc.lrThld)
-        tmpL[2] = QR_rmul(tmpL[2], inv(walker.cluster.B[qmc.K + cidx]), N[2], qmc.lrThld)
-
-        calib_counter += 1
-        if calib_counter == qmc.update_interval
-            tmpL = calibrate(system, qmc, walker.cluster, cidx)
-            calib_counter = 0
-        end
-
-        update_cluster!(
-            walker, system, qmc, cidx, 
-            QR_merge(tmpR[1], tmpL[1], N[1], qmc.lrThld), 
-            QR_merge(tmpR[2], tmpL[2], N[2], qmc.lrThld)
-        )
-
-        tmpR[1] = QR_lmul(walker.cluster.B[cidx], tmpR[1], N[1], qmc.lrThld)
-        tmpR[2] = QR_lmul(walker.cluster.B[qmc.K + cidx], tmpR[2], N[2], qmc.lrThld)
+        walker = update_cluster!(walker, system, qmc, cidx)
     end
 
-    return GCEWalker{W, T, UDTlr{T}, C}(walker.sgn, walker.logweight, walker.auxfield, tmpR, walker.cluster)
+    return walker
 end
 
-"""
-    GCE sweep with customized μ
-"""
-
-function calc_trial_gce(
-    σ::AbstractArray{Int64}, system::System, μt::Float64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {T<:FloatType}
-    Btmp = singlestep_matrix(σ, system)
-    Utmp = [Btmp[1] * F1.U[:, F1.t], Btmp[2] * F2.U[:, F2.t]]
-    Ftmp = [UDTlr(Utmp[1], F1.D, F1.T, F1.t), UDTlr(Utmp[2], F2.D, F2.T, F2.t)]
-    λ = [eigvals(Ftmp[1]), eigvals(Ftmp[2])]
-
-    sgn1, logZ1 = calc_pf(system.β, μt, λ[1])
-    sgn2, logZ2 = calc_pf(system.β, μt, λ[2])
-    
-    system.isReal && return real([sgn1, sgn2]), [logZ1, logZ2]
-    return [sgn1, sgn2], [logZ1, logZ2]
-end
-
+### Replica Sampling ###
 function update_cluster!(
-    walker::GCEWalker{W, T, UDTlr{T}, C}, system::System, qmc::QMC, 
-    μt::Float64, cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {W<:FloatType, T<:FloatType, C}
+    walker1::GCEWalker{T1, C}, walker2::GCEWalker{T2, C},
+    system::System, qmc::QMC, cidx::Int64
+) where {T1<:FloatType, T2<:FloatType, C}
+    """
+        Update the whole cluster for two copies of walker
+    """
     k = qmc.stab_interval
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    R1 = R1 * walker.cluster.B[cidx]
-    R2 = R2 * walker.cluster.B[qmc.K + cidx]
-    Bl = Cluster(system.V, 2 * k)
+
+    Bl1 = Cluster(system.V, 2 * k)
+    G1 = walker1.G
+    α1 = walker1.α
+
+    Bl2 = Cluster(system.V, 2 * k)
+    G2 = walker2.G
+    α2 = walker2.α
 
     for i in 1 : k
-        σ = @view walker.auxfield[:, (cidx - 1) * k + i]
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        R1 = R1 * inv(Bl.B[i])
-        R2 = R2 * inv(Bl.B[k + i])
-
+        l = (cidx - 1) * k + i
+        @views σ1 = convert_auxidx.(walker1.auxfield[:, l])
+        @views σ2 = convert_auxidx.(walker2.auxfield[:, l])
         for j in 1 : system.V
-            σ[j] *= -1
-            sgn, logZ = calc_trial_gce(
-                σ, system, μt,
-                UDTlr(U1, D1, R1, F1.t), UDTlr(U2, D2, R2, F2.t), 
-            )
-            r = (logZ[1] - walker.logweight[1]) + (logZ[2] - walker.logweight[2])
-            accept = exp(r) / (1 + exp(r))
-            if rand() < accept
-                walker.sgn .= sgn
-                walker.logweight .= logZ
-            else
-                σ[j] *= -1
+            # ratio of determinants
+            d1_up = 1 + α1[1, σ1[j]] * (1 - G1[1][j, j])
+            d1_dn = 1 + α1[2, σ1[j]] * (1 - G1[2][j, j])
+            r1 = abs(d1_up * d1_dn)
+            
+            d2_up = 1 + α2[1, σ2[j]] * (1 - G2[1][j, j])
+            d2_dn = 1 + α2[2, σ2[j]] * (1 - G2[2][j, j])
+            r2 = abs(d2_up * d2_dn)
+
+            idx = heatbath_sampling([1, r1, r2, r1 * r2])
+            
+            if idx == 2
+                # accept trial 1 but reject trial 2
+                walker1.auxfield[j, l] *= -1
+                G1[1] = updateG(G1[1], α1[1, σ1[j]], d1_up, j)
+                G1[2] = updateG(G1[2], α1[2, σ1[j]], d1_dn, j)
+            elseif idx == 3
+                # reject trial 1 but accept trial 1
+                walker2.auxfield[j, l] *= -1
+                G2[1] = updateG(G2[1], α2[1, σ2[j]], d2_up, j)
+                G2[2] = updateG(G2[2], α2[2, σ2[j]], d2_dn, j)
+            elseif idx == 4
+                # accept both trials
+                walker1.auxfield[j, l] *= -1
+                G1[1] = updateG(G1[1], α1[1, σ1[j]], d1_up, j)
+                G1[2] = updateG(G1[2], α1[2, σ1[j]], d1_dn, j)
+
+                walker2.auxfield[j, l] *= -1
+                G2[1] = updateG(G2[1], α2[1, σ2[j]], d2_up, j)
+                G2[2] = updateG(G2[2], α2[2, σ2[j]], d2_dn, j)
             end
         end
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
+        Bl1.B[i], Bl1.B[k + i] = singlestep_matrix(walker1.auxfield[:, l], system)
+        Bl2.B[i], Bl2.B[k + i] = singlestep_matrix(walker2.auxfield[:, l], system)
+
+        # wrap the Green's function
+        B = (system.Bk) * Bl1.B[i] * inv(system.Bk)
+        G1[1] = B * G1[1] * inv(B)
+        B = (system.Bk) * Bl1.B[k + i] * inv(system.Bk)
+        G1[2] = B * G1[2] * inv(B)
+
+        B = (system.Bk) * Bl2.B[i] * inv(system.Bk)
+        G2[1] = B * G2[1] * inv(B)
+        B = (system.Bk) * Bl2.B[k + i] * inv(system.Bk)
+        G2[2] = B * G2[2] * inv(B)
     end
+    walker1.cluster.B[cidx] = prod(Bl1, k : -1 : 1)
+    walker1.cluster.B[qmc.K + cidx] = prod(Bl1, 2*k : -1 : k+1)
 
-    walker.cluster.B[cidx] = prod(Bl, k : -1 : 1)
-    walker.cluster.B[qmc.K + cidx] = prod(Bl, 2*k : -1 : k+1)
+    walker2.cluster.B[cidx] = prod(Bl2, k : -1 : 1)
+    walker2.cluster.B[qmc.K + cidx] = prod(Bl2, 2*k : -1 : k+1)
 
-    return nothing
+    # wrap is not stable and G needs to be periodically recomputed
+    walker1 = recomputeG(system, qmc, walker1, cidx)
+    walker2 = recomputeG(system, qmc, walker2, cidx)
+
+    return walker1, walker2
 end
 
 function sweep!(
     system::System, qmc::QMC, 
-    walker::GCEWalker{W, T, UDTlr{T}, C}, μt::Float64;
-    tmpL = deepcopy(walker.F),
-    tmpR = [UDTlr(system.V), UDTlr(system.V)]
-) where {W<:FloatType, T<:FloatType, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    N = system.N
-    calib_counter = 0
+    walker1::GCEWalker{T1, C}, walker2::GCEWalker{T2, C}
+) where {T1<:FloatType, T2<:FloatType, C}
     for cidx in 1 : qmc.K
-        tmpL[1] = QR_rmul(tmpL[1], inv(walker.cluster.B[cidx]), N[1], qmc.lrThld)
-        tmpL[2] = QR_rmul(tmpL[2], inv(walker.cluster.B[qmc.K + cidx]), N[2], qmc.lrThld)
-
-        calib_counter += 1
-        if calib_counter == qmc.update_interval
-            tmpL = calibrate(system, qmc, walker.cluster, cidx)
-            calib_counter = 0
-        end
-
-        update_cluster!(
-            walker, system, qmc, μt, cidx, 
-            QR_merge(tmpR[1], tmpL[1], N[1], qmc.lrThld), 
-            QR_merge(tmpR[2], tmpL[2], N[2], qmc.lrThld)
-        )
-
-        tmpR[1] = QR_lmul(walker.cluster.B[cidx], tmpR[1], N[1], qmc.lrThld)
-        tmpR[2] = QR_lmul(walker.cluster.B[qmc.K + cidx], tmpR[2], N[2], qmc.lrThld)
+        walker1, walker2 = update_cluster!(walker1, walker2, system, qmc, cidx)
     end
 
-    return GCEWalker{W, T, UDTlr{T}, C}(walker.sgn, walker.logweight, walker.auxfield, tmpR, walker.cluster)
+    return walker1, walker2
 end

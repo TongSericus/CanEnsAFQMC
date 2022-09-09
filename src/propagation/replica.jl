@@ -58,9 +58,12 @@ function update_cluster!(
                 UDTlr(U2[2], F2[2].D, R2[2], F2[2].t)
             )
 
-            r1 = (Z1[1] / walker1.weight[1]) * (Z1[2] / walker1.weight[2])
-            r2 = (Z2[1] / walker2.weight[1]) * (Z2[2] / walker2.weight[2])
-            idx = heatbath_sampling([1, abs(r1), abs(r2), abs(r1 * r2)])
+            r1 = sum(Z1) - sum(walker1.weight)
+            r1 = abs(exp(r1))
+            r2 = sum(Z2) - sum(walker2.weight)
+            r2 = abs(exp(r2))
+            
+            idx = heatbath_sampling([1, r1, r2, r1 * r2])
 
             if idx == 1
                 # reject both trials
@@ -141,8 +144,8 @@ function sweep!(
         tmpR2[2] = QR_lmul(walker2.cluster.B[qmc.K + cidx], tmpR2[2], N[2], qmc.lrThld)
     end
 
-    walker1 = Walker{T1, T2, UDTlr{T2}, C}(walker1.weight, walker1.auxfield, tmpR1, walker1.cluster)
-    walker2 = Walker{T1, T2, UDTlr{T2}, C}(walker2.weight, walker2.auxfield, tmpR2, walker2.cluster)
+    walker1 = Walker{W, T1, UDTlr{T1}, C}(walker1.weight, walker1.auxfield, tmpR1, walker1.cluster)
+    walker2 = Walker{W, T2, UDTlr{T2}, C}(walker2.weight, walker2.auxfield, tmpR2, walker2.cluster)
 
     return walker1, walker2
 end
