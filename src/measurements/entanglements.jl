@@ -69,7 +69,7 @@ function measure_renyi2_entropy(
     expS2 = 0
     nU = min(LA, N)
     nL = max(0, N - system.V + LA)
-    expS2n = SizedVector{N + 1}(zeros(ComplexF64, N + 1))
+    expS2n = zeros(ComplexF64, N + 1)
     
     # measure through a 2D Fourier transform
     for m = 1 : system.V

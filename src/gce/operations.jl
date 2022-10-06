@@ -1,3 +1,5 @@
+calc_pf(F::UDT, expβμ::Float64) = sum(log.(complex.(1 .+ expβμ*eigvals(F))))
+
 function shiftB(F::UDT, B::AbstractMatrix)
     F = QR_rmul(F, inv(B))
     F = QR_lmul(B, F)

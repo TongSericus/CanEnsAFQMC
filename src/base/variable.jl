@@ -18,9 +18,6 @@ struct QMC
     ### MCMC (Metropolis) ###
     nwarmups::Int64
     nsamples::Int64
-    ### Branching Ramdom Walk ###
-    nblocks::Int64
-    nwalkers::Int64
     ### Numerical Stablization ###
     isCP::Bool
     stab_interval::Int64
@@ -33,7 +30,6 @@ struct QMC
     rpThld::Float64
 
     function QMC(system::System, nwarmups::Int64, nsamples::Int64,
-        nblocks::Int64, nwalkers::Int64,
         isCP::Bool, stab_interval::Int64, update_interval::Int64,
         isLowrank::Bool, lrThld::Float64,
         isRepart::Bool, rpThld::Float64
@@ -41,7 +37,6 @@ struct QMC
         (system.L % stab_interval == 0) || @error "# of time slices should be divisible by the stablization interval"
         return new(
             nwarmups, nsamples,
-            nblocks, nwalkers,
             isCP, stab_interval, div(system.L, stab_interval), update_interval,
             isLowrank, lrThld, isRepart, rpThld
         )

@@ -1,283 +1,293 @@
 """
     Metropolis Sampling (MCMC) (for different factorizations)
 """
+### UDR(deleted) ###
+
+### UDT ###
 function calc_pf(
-    system::System, F1::Factorization{T}, F2::Factorization{T}; 
-    isRepart::Bool = false, rpThld::Float64 = 0.02
-) where {T<:FloatType}
-    if isRepart
-        λocc, λf = repartition(F1, rpThld)
-        Z1 = pf_recursion(length(F1.t), system.N[1], vcat(λf, λocc))
-
-        λocc, λf = repartition(F2, rpThld)
-        Z2 = pf_recursion(length(F2.t), system.N[2], vcat(λf, λocc))
-
-        return [Z1, Z2]
-    else
-        λ = [eigvals(F1), eigvals(F2)]
-        Z = [
-            pf_recursion(length(λ[1]), system.N[1], λ[1]),
-            pf_recursion(length(λ[2]), system.N[2], λ[2])
-        ]
-
-        return Z
-    end
+    F::UDT, N::Int64;
+    Ns = length(F.D),
+    PMat = zeros(ComplexF64, Ns + 1, Ns)
+)
+    λ = eigvals(F)
+    return pf_recursion(λ, N, P=PMat)
 end
 
 function calc_trial(
-    σ::AbstractArray{Int64}, system::System, F1::UDR{T}, F2::UDR{T}
-) where {T<:FloatType}
-    """
-    F1 and F2 represent spin-up and spin-down sectors respectively
-    """
-    Btmp = singlestep_matrix(σ, system)
-    Utmp = [Btmp[1] * F1.U, Btmp[2] * F2.U]
-    Ftmp = [UDR(Utmp[1], F1.D, F1.R), UDR(Utmp[2], F2.D, F2.R)]
-    return calc_pf(system, Ftmp[1], Ftmp[2])
-end
-
-function calc_trial(
-    σ::AbstractArray{Int64}, system::System, F1::UDT{T}, F2::UDT{T}
-) where {T<:FloatType}
-    """
-    F1 and F2 represent spin-up and spin-down sectors respectively
-    """
-    Btmp = singlestep_matrix(σ, system)
-    Utmp = [Btmp[1] * F1.U, Btmp[2] * F2.U]
-    Ftmp = [UDT(Utmp[1], F1.D, F1.T), UDT(Utmp[2], F2.D, F2.T)]
-    return calc_pf(system, Ftmp[1], Ftmp[2])
-end
-
-function calc_trial(
-    σ::AbstractArray{Int64}, system::System, qmc::QMC, F1::UDTlr{T}, F2::UDTlr{T}
-) where {T<:FloatType}
+    σ::AbstractArray{Int64}, system::System, P::Matrix{Tp}, F1::UDT{T}, F2::UDT{T}
+) where {T<:Number, Tp<:Number}
     """
     Compute the weight of a trial configuration using a potential repartition scheme
     """
+    weight_new = Vector{Tp}()
     Btmp = singlestep_matrix(σ, system)
-    Utmp = [Btmp[1] * F1.U[:, F1.t], Btmp[2] * F2.U[:, F2.t]]
-    Ftmp = [UDTlr(Utmp[1], F1.D, F1.T, F1.t), UDTlr(Utmp[2], F2.D, F2.T, F2.t)]
-    return calc_pf(system, Ftmp[1], Ftmp[2]; isRepart = qmc.isRepart, rpThld = qmc.rpThld)
+
+    @views Utmp = Btmp[1] * F1.U
+    Ftmp = UDT(Utmp, F1.D, F1.T)
+    push!(weight_new, calc_pf(Ftmp, system.N[1], PMat=P))
+    
+    @views Utmp = Btmp[2] * F2.U
+    Ftmp = UDT(Utmp, F2.D, F2.T)
+    push!(weight_new, calc_pf(Ftmp, system.N[2], PMat=P))
+
+    return weight_new, Btmp
 end
 
-function update_cluster!(
-    walker::Walker{W, T, UDR{T}, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDR{T}, F2::UDR{T}
-) where {W<:FloatType, T<:FloatType, C}
+function global_flip!(
+    system::System, weight_old::Vector{W},
+    σ::AbstractArray, P::Matrix{Tp},
+    F1::UDT{T}, Bl1::AbstractMatrix{Tm}, 
+    F2::UDT{T}, Bl2::AbstractMatrix{Tm}
+) where {W<:Number, Tp<:Number, T<:Number, Tm<:Number}
     """
-    cidx -> cluster index
+        Select a fraction of sites and flip their spins
     """
-    k = qmc.stab_interval
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    R1 = R1 * walker.cluster.B[cidx]
-    R2 = R2 * walker.cluster.B[qmc.K + cidx]
-    Bl = Cluster(system.V, 2 * k)
+    σ_flip = 2 * (rand(system.V) .< 0.5) .- 1
+    σ .*= σ_flip
+    weight_new, Bltmp = calc_trial(σ, system, P, F1, F2)
 
-    for i in 1 : k
-        σ = @view walker.auxfield[:, (cidx - 1) * k + i]
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        R1 = R1 * inv(Bl.B[i])
-        R2 = R2 * inv(Bl.B[k + i])
-
-        for j in 1 : system.V
-            σ[j] *= -1
-            Z = calc_trial(σ, system, UDR(U1, D1, R1), UDR(U2, D2, R2))
-            r = sum(Z) - sum(walker.weight)
-            r = abs(exp(r))
-            p = r / (1 + r)
-            if rand() < p
-                walker.weight .= Z
-            else
-                σ[j] *= -1
-            end
-        end
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
+    # accept ratio
+    r = abs(exp(sum(weight_new) - sum(weight_old)))
+    if rand() < min(1, r)
+        weight_old .= weight_new
+        Bl1 .= Bltmp[1]
+        Bl2 .= Bltmp[2]
+    else
+        σ .*= σ_flip
     end
-
-    walker.cluster.B[cidx] = prod(Bl, k : -1 : 1)
-    walker.cluster.B[qmc.K + cidx] = prod(Bl, 2*k : -1 : k+1)
 
     return nothing
 end
 
 function update_cluster!(
-    walker::Walker{W, T, UDT{T}, C}, system::System, qmc::QMC, 
+    walker::Walker{Tw, Tf, UDT{Tf}, Tp, C}, system::System, qmc::QMC, 
     cidx::Int64, F1::UDT{T}, F2::UDT{T}
-) where {W<:FloatType, T<:FloatType, C}
-    """
-    cidx -> cluster index
-    """
+) where {Tw, Tf, Tp, C, T}
     k = qmc.stab_interval
+    K = qmc.K
+    P = walker.tempdata.P
+    Bl = walker.tempdata.cluster
+    cluster = walker.cluster
+
     U1, D1, R1 = F1
     U2, D2, R2 = F2
-    R1 = R1 * walker.cluster.B[cidx]
-    R2 = R2 * walker.cluster.B[qmc.K + cidx]
-    Bl = Cluster(system.V, 2 * k)
+    R1 = R1 * cluster.B[cidx]
+    R2 = R2 * cluster.B[K + cidx]
 
     for i in 1 : k
         σ = @view walker.auxfield[:, (cidx - 1) * k + i]
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
+        singlestep_matrix!(Bl.B[i], Bl.B[k + i], σ, system)
         R1 = R1 * inv(Bl.B[i])
         R2 = R2 * inv(Bl.B[k + i])
 
-        for j in 1 : system.V
-            σ[j] *= -1
-            Z = calc_trial(σ, system, UDT(U1, D1, R1), UDT(U2, D2, R2))
-            r = sum(Z) - sum(walker.weight)
-            r = abs(exp(r))
-            p = r / (1 + r)
-            if rand() < p
-                walker.weight .= Z
-            else
-                σ[j] *= -1
-            end
-        end
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
-    end
-
-    walker.cluster.B[cidx] = prod(Bl, k : -1 : 1)
-    walker.cluster.B[qmc.K + cidx] = prod(Bl, 2*k : -1 : k+1)
-
-    return nothing
-end
-
-function update_cluster!(
-    walker::Walker{W, T, UDTlr{T}, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {W<:FloatType, T<:FloatType, C}
-    k = qmc.stab_interval
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    R1 = R1 * walker.cluster.B[cidx]
-    R2 = R2 * walker.cluster.B[qmc.K + cidx]
-    Bl = Cluster(system.V, 2 * k)
-
-    for i in 1 : k
-        σ = @view walker.auxfield[:, (cidx - 1) * k + i]
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        R1 = R1 * inv(Bl.B[i])
-        R2 = R2 * inv(Bl.B[k + i])
-
-        for j in 1 : system.V
-            σ[j] *= -1
-            Z = calc_trial(
-                σ, system, qmc,
-                UDTlr(U1, D1, R1, F1.t), UDTlr(U2, D2, R2, F2.t), 
-            )
-            r = sum(Z) - sum(walker.weight)
-            r = abs(exp(r))
-            p = r / (1 + r)
-            #p = abs(r)
-            if p > 1 || rand() < p
-                walker.weight .= Z
-            else
-                σ[j] *= -1
-            end
-        end
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(σ, system)
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
-    end
-
-    walker.cluster.B[cidx] = prod(Bl, k : -1 : 1)
-    walker.cluster.B[qmc.K + cidx] = prod(Bl, 2*k : -1 : k+1)
-
-    return nothing
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{W, T, UDR{T}, C};
-    tmpL = deepcopy(walker.F),
-    tmpR = [UDR(system.V), UDR(system.V)]
-) where {W<:FloatType, T<:FloatType, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    calib_counter = 0
-    for cidx in 1 : qmc.K
-        QR_rmul!(tmpL[1], inv(walker.cluster.B[cidx]))
-        QR_rmul!(tmpL[2], inv(walker.cluster.B[qmc.K + cidx]))
-
-        calib_counter += 1
-        if calib_counter == qmc.update_interval
-            tmpL = calibrate(system, qmc, walker.cluster, cidx)
-            calib_counter = 0
-        end
-
-        update_cluster!(walker, system, qmc, cidx, QR_merge(tmpR[1], tmpL[1]), QR_merge(tmpR[2], tmpL[2]))
-        
-        QR_lmul!(walker.cluster.B[cidx], tmpR[1])
-        QR_lmul!(walker.cluster.B[qmc.K + cidx], tmpR[2])
-    end
-
-    return Walker{W, T, UDR{T}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{W, T, UDT{T}, C};
-    tmpL = deepcopy(walker.F),
-    tmpR = [UDT(system.V), UDT(system.V)]
-) where {W<:FloatType, T<:FloatType, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    calib_counter = 0
-    for cidx in 1 : qmc.K
-        tmpL[1] = QR_rmul(tmpL[1], inv(walker.cluster.B[cidx]))
-        tmpL[2] = QR_rmul(tmpL[2], inv(walker.cluster.B[qmc.K + cidx]))
-
-        calib_counter += 1
-        if calib_counter == qmc.update_interval
-            tmpL = calibrate(system, qmc, walker.cluster, cidx)
-            calib_counter = 0
-        end
-
-        update_cluster!(walker, system, qmc, cidx, QR_merge(tmpR[1], tmpL[1]), QR_merge(tmpR[2], tmpL[2]))
-        
-        tmpR[1] = QR_lmul(walker.cluster.B[cidx], tmpR[1])
-        tmpR[2] = QR_lmul(walker.cluster.B[qmc.K + cidx], tmpR[2])
-    end
-
-    return Walker{W, T, UDT{T}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{W, T, UDTlr{T}, C};
-    tmpL = deepcopy(walker.F),
-    tmpR = [UDTlr(system.V), UDTlr(system.V)]
-) where {W<:FloatType, T<:FloatType, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    N = system.N
-    calib_counter = 0
-    for cidx in 1 : qmc.K
-        tmpL[1] = QR_rmul(tmpL[1], inv(walker.cluster.B[cidx]), N[1], qmc.lrThld)
-        tmpL[2] = QR_rmul(tmpL[2], inv(walker.cluster.B[qmc.K + cidx]), N[2], qmc.lrThld)
-
-        calib_counter += 1
-        if calib_counter == qmc.update_interval
-            tmpL = calibrate(system, qmc, walker.cluster, cidx)
-            calib_counter = 0
-        end
-
-        update_cluster!(
-            walker, system, qmc, cidx, 
-            QR_merge(tmpR[1], tmpL[1], N[1], qmc.lrThld), 
-            QR_merge(tmpR[2], tmpL[2], N[2], qmc.lrThld)
+        global_flip!(
+            system, walker.weight, σ, P,
+            UDT(U1, D1, R1), Bl.B[i],
+            UDT(U2, D2, R2), Bl.B[k + i]
         )
 
-        tmpR[1] = QR_lmul(walker.cluster.B[cidx], tmpR[1], N[1], qmc.lrThld)
-        tmpR[2] = QR_lmul(walker.cluster.B[qmc.K + cidx], tmpR[2], N[2], qmc.lrThld)
+        U1 = Bl.B[i] * U1
+        U2 = Bl.B[k + i] * U2
     end
 
-    return Walker{W, T, UDTlr{T}, C}(walker.weight, walker.auxfield, tmpR, walker.cluster)
+    cluster.B[cidx] = prod(Bl, k : -1 : 1)
+    cluster.B[K + cidx] = prod(Bl, 2*k : -1 : k+1)
+
+    return nothing
+end
+
+function sweep!(
+    system::System, qmc::QMC, 
+    walker::Walker{Tw, Tf, UDT{Tf}, Tp, C}
+) where {Tw<:Number, Tf<:Number, Tp<:Number, C}
+    """
+        Sweep the walker over the entire space-time lattice
+    """
+    cluster = walker.cluster
+    tempdata = walker.tempdata
+    tmpL = tempdata.FL
+    tmpR = tempdata.FR
+    tmpM = tempdata.FM
+
+    for cidx in 1 : qmc.K
+        tmpL[1] = QR_rmul(tmpL[1], inv(cluster.B[cidx]))
+        tmpL[2] = QR_rmul(tmpL[2], inv(cluster.B[qmc.K + cidx]))
+
+        # recompute the matrix decomposition periodically
+        if mod(cidx, qmc.update_interval) == 0 || cidx == qmc.K
+            tmpL .= run_partial_propagation(
+                cluster, system, qmc, collect(cidx + 1 : qmc.K)
+            )
+        end
+
+        QR_merge!(tmpM[1], tmpR[1], tmpL[1])
+        QR_merge!(tmpM[2], tmpR[2], tmpL[2])
+        update_cluster!(
+            walker, system, qmc, cidx, tmpM[1], tmpM[2]
+        )
+
+        tmpR[1] = QR_lmul(cluster.B[cidx], tmpR[1])
+        tmpR[2] = QR_lmul(cluster.B[qmc.K + cidx], tmpR[2])
+    end
+
+    return nothing
+end
+
+### UDT with low-rank truncation ###
+function calc_pf(
+    F::UDTlr, N::Int64;
+    Ns = length(F.t[]),
+    PMat = zeros(ComplexF64, Ns + 1, Ns),
+    isRepart::Bool = false, rpThld::Float64 = 1e-4
+)
+    if isRepart
+        λocc, λf = repartition(F, rpThld)
+        λ = vcat(λf, λocc)
+        return pf_recursion(λ, N, P=PMat)
+    else
+        λ = eigvals(F)
+        return pf_recursion(λ, N, P=PMat)
+    end
+end
+
+function calc_trial(
+    σ::AbstractArray{Int64}, system::System, P::Matrix{Tp}, F1::UDTlr{T}, F2::UDTlr{T}
+) where {T<:Number, Tp<:Number}
+    """
+    Compute the weight of a trial configuration using a potential repartition scheme
+    """
+    weight_new = Vector{Tp}()
+    Btmp = singlestep_matrix(σ, system)
+
+    @views Utmp = Btmp[1] * F1.U[:, F1.t[]]
+    Ftmp = UDTlr(Utmp, F1.D, F1.T, F1.t)
+    push!(weight_new, calc_pf(Ftmp, system.N[1], PMat=P))
+    
+    @views Utmp = Btmp[2] * F2.U[:, F2.t[]]
+    Ftmp = UDTlr(Utmp, F2.D, F2.T, F2.t)
+    push!(weight_new, calc_pf(Ftmp, system.N[2], PMat=P))
+
+    return weight_new, Btmp
+end
+
+function local_flip!()
+    """
+        Flip the spins site by site
+    """
+end
+
+function global_flip!(
+    system::System, weight_old::Vector{W},
+    σ::AbstractArray, P::Matrix{Tp},
+    F1::UDTlr{T}, Bl1::AbstractMatrix{Tm}, 
+    F2::UDTlr{T}, Bl2::AbstractMatrix{Tm}
+) where {W<:Number, Tp<:Number, T<:Number, Tm<:Number}
+    """
+        Select a fraction of sites and flip their spins
+    """
+    σ_flip = 2 * (rand(system.V) .< 0.5) .- 1
+    σ .*= σ_flip
+    weight_new, Bltmp = calc_trial(σ, system, P, F1, F2)
+
+    # accept ratio
+    r = abs(exp(sum(weight_new) - sum(weight_old)))
+    if rand() < min(1, r)
+        weight_old .= weight_new
+        Bl1 .= Bltmp[1]
+        Bl2 .= Bltmp[2]
+    else
+        σ .*= σ_flip
+    end
+
+    return nothing
+end
+
+function update_cluster!(
+    walker::Walker{Tw, Tf, UDTlr{Tf}, Tp, C}, system::System, qmc::QMC, 
+    cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
+) where {Tw, Tf, Tp, C, T}
+    k = qmc.stab_interval
+    K = qmc.K
+    P = walker.tempdata.P
+    Bl = walker.tempdata.cluster
+    cluster = walker.cluster
+
+    U1, D1, R1 = F1
+    U2, D2, R2 = F2
+    R1 = R1 * cluster.B[cidx]
+    R2 = R2 * cluster.B[K + cidx]
+
+    for i in 1 : k
+        σ = @view walker.auxfield[:, (cidx - 1) * k + i]
+        singlestep_matrix!(Bl.B[i], Bl.B[k + i], σ, system)
+        R1 = R1 * inv(Bl.B[i])
+        R2 = R2 * inv(Bl.B[k + i])
+
+        global_flip!(
+            system, walker.weight, σ, P,
+            UDTlr(U1, D1, R1, F1.t), Bl.B[i],
+            UDTlr(U2, D2, R2, F2.t), Bl.B[k + i]
+        )
+
+        U1 = Bl.B[i] * U1
+        U2 = Bl.B[k + i] * U2
+    end
+
+    cluster.B[cidx] = prod(Bl, k : -1 : 1)
+    cluster.B[K + cidx] = prod(Bl, 2*k : -1 : k+1)
+
+    return nothing
+end
+
+function sweep!(
+    system::System, qmc::QMC, 
+    walker::Walker{Tw, Tf, UDTlr{Tf}, Tp, C}
+) where {Tw<:Number, Tf<:Number, Tp<:Number, C}
+    """
+        Sweep the walker over the entire space-time lattice
+    """
+    N = system.N
+    cluster = walker.cluster
+    tempdata = walker.tempdata
+    tmpL = tempdata.FL
+    tmpR = tempdata.FR
+    tmpM = tempdata.FM
+
+    for cidx in 1 : qmc.K
+        tmpL[1] = QR_rmul(tmpL[1], inv(cluster.B[cidx]), N[1], qmc.lrThld)
+        tmpL[2] = QR_rmul(tmpL[2], inv(cluster.B[qmc.K + cidx]), N[2], qmc.lrThld)
+
+        # recompute the matrix decomposition periodically
+        if mod(cidx, qmc.update_interval) == 0 || cidx == qmc.K
+            tmpL .= run_partial_propagation(
+                cluster, system, qmc, collect(cidx + 1 : qmc.K)
+            )
+        end
+
+        QR_merge!(tmpM[1], tmpR[1], tmpL[1], N[1], qmc.lrThld)
+        QR_merge!(tmpM[2], tmpR[2], tmpL[2], N[2], qmc.lrThld)
+        update_cluster!(
+            walker, system, qmc, cidx, tmpM[1], tmpM[2]
+        )
+
+        tmpR[1] = QR_lmul(cluster.B[cidx], tmpR[1], N[1], qmc.lrThld)
+        tmpR[2] = QR_lmul(cluster.B[qmc.K + cidx], tmpR[2], N[2], qmc.lrThld)
+    end
+
+    return nothing
+end
+
+### Operations after MC ###
+
+function move_walker(walker::Walker)
+    """
+        Move the walker to the next MC iteration
+    """
+    tmp = walker.tempdata
+    # switch the order of FL and FR
+    tempdata = TempData(tmp.FR, tmp.FL, tmp.FM, tmp.P, tmp.cluster)
+    walker = Walker(
+        walker.weight, walker.auxfield,
+        tempdata, walker.cluster
+    )
 end

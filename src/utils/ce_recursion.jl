@@ -7,14 +7,20 @@
     expβϵ -> exponentiated spectrum, i.e., exp(-βϵ)
 """
 function pf_recursion(
-    Ns::Int64, N::Int64, expβϵ::Vector{T}; returnFull::Bool = false, useDouble::Bool = true
-) where {T<:FloatType}
+    expβϵ::Vector{T}, N::Int64;
+    isReal::Bool = false,
+    useDouble::Bool = false,
+    Ns = length(expβϵ),
+    P = zeros(eltype(expβϵ), Ns + 1, Ns)
+) where {T<:Number}
     """
-    Recursive calculation of the partition function
+        Recursive calculation of the partition function
     """
+    isReal || (expβϵ = complex(expβϵ))
+
     N == 0 && return convert(T, 0.0)
-    N == 1 && return log(complex(sum(expβϵ)))
-    N == Ns && return sum(log.(complex(expβϵ)))
+    N == 1 && return log(sum(expβϵ))
+    N == Ns && return sum(log.(expβϵ))
     
     # rescale spectrum
     expβμ = fermilevel(expβϵ, N)
@@ -22,60 +28,63 @@ function pf_recursion(
     # map to higher precision
     useDouble && (expβϵμ = ComplexDF64.(expβϵμ))
     
-    P = poissbino(Ns, expβϵμ, false)
-    # unmap to Float64
-    P = convert.(ComplexF64, P)
+    poissbino(Ns, expβϵμ, P=P)
+
     if N > Ns / 2
-        logZ = log(P[N + 1]) - log(P[end]) - (Ns - N)*log(expβμ) + sum(log.(complex(expβϵ)))
+        # non-logarithmic version: Z(N) = P(N) / P(Ns) * expβμ^(N - Ns) * Z(Ns)
+        logZ = log(P[N+1, Ns]) - log(P[Ns+1, Ns]) - (Ns - N)*log(expβμ) + sum(log.(expβϵ))
     else
-        # non-logarithmic version: Z = P[N + 1] / P[2] * (expβμ) ^ (N - 1) * Z₁
-        # use P[2] instead of P[1] as P[2] is more stable numerically
-        logZ = log(P[N + 1]) - log(P[2]) + (N - 1)*log(expβμ) + log(complex(sum(expβϵ)))
+        # non-logarithmic version: Z(N) = P(N) / P(0) * expβμ^N
+        logP0 = -sum(log.(1 .+ expβϵμ))
+        logZ = log(P[N+1, Ns]) - logP0 + N*log(expβμ)
     end
 
-    returnFull || return logZ
-    return expβϵμ, P, logZ
+    return logZ
 end
 
 function occ_recursion(
-    Ns::Int64, N::Int64, expβϵ::Vector{T}
-) where {T<:FloatType}
+    expβϵ::Vector{T}, N::Int64;
+    isReal::Bool = false,
+    Ns = length(expβϵ),
+    P = zeros(eltype(expβϵ), Ns + 1, Ns)
+) where {T<:Number}
     """
-    Recursive calculation of the occupation number (in the momentum space)
+        Recursive calculation of the occupation number
     """
+    isReal || (expβϵ = complex(expβϵ))
+
     N == 0 && return zeros(T, Ns)
     N == Ns && return ones(T, Ns)
-    n₁ = expβϵ / sum(expβϵ)
-    N == 1 && return n₁
+    N == 1 && return expβϵ / sum(expβϵ)
 
-    expβϵμ, P, logZ = pf_recursion(Ns, N, expβϵ, returnFull=true)
+    expβμ = fermilevel(expβϵ, N)
+    expβϵμ = expβϵ / expβμ
+    poissbino(Ns, expβϵμ, P=P)
+
     # num of energy levels below the Fermi level
     # use this formula to ensure complex conjugate pairs are in the same section
     N_below = sum(abs.(expβϵμ) .> 1)
 
     # separate recursions for occupancies of energy levels above/below the Fermi level
-    n_above = occ_recursion_rescaled(Ns, N, expβϵμ[1 : Ns - N_below], P, n₁, false)
-    n_below = occ_recursion_rescaled(Ns, N, expβϵμ[Ns - N_below + 1 : Ns], P, n₁, true)
+    @views n_above = occ_recursion_rescaled(Ns, N, expβϵμ[1 : Ns - N_below], P[:, Ns])
+    @views n_below = occ_recursion_rescaled(Ns, N, expβϵμ[Ns - N_below + 1 : Ns], P[:, Ns], isReverse=true)
     # then concatenate
     n = vcat(n_above, n_below)
-    # unmap to Float64
-    n = convert.(ComplexF64, n)
+
     return n
 end
 
 function occ_recursion_rescaled(
     Ns::Int64, N::Int64,
-    expβϵμ::Vector{Te}, P::Vector{Tp}, n₁::Vector{Tn},
-    isReverse::Bool
-) where {Te<:FloatType, Tp<:FloatType, Tn<:FloatType}
+    expβϵμ::AbstractArray{T}, P::AbstractArray{T};
+    isReverse::Bool = false
+) where T
     """
-    Level occupancy recursion using the rescaled spectrum
+        Level occupancy recursion using the rescaled spectrum
     """
     Ñs = length(expβϵμ)
     if !isReverse
-        n = zeros(Tn, N + 1, Ñs)
-        # use n₁ as a correction
-        n[2, :] = n₁[1 : Ñs]
+        n = zeros(ComplexF64, N + 1, Ñs)
         for i = 2 : N
             n[i + 1, :] = (P[i] / P[i + 1]) * expβϵμ .* (1 .- n[i, :])
             # Truncate the values that are smaller than 10^-10
@@ -83,8 +92,9 @@ function occ_recursion_rescaled(
         end
         return n[N + 1, :]
     else
-        N_rev = Ns - N                  # num. of reverse recursions
-        n = ones(Tn, N_rev, Ñs)
+        # num. of reverse recursions
+        N_rev = Ns - N
+        n = ones(ComplexF64, N_rev, Ñs)
         for i = 1 : N_rev - 1
             n[i + 1, :] = (P[Ns - i + 1] / P[Ns - i]) * n[i, :] ./ expβϵμ
             # Truncate the values that are smaller than 10^-10

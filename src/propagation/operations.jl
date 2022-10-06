@@ -2,20 +2,22 @@
     All operations in the propagation
 """
 
-function initial_propagation(
+function run_full_propagation(
     auxfield::Matrix{Int64}, system::System, qmc::QMC; K = qmc.K
 )
     """
-    Stable propagation over the entire space-time auxiliary field
+        Stable propagation over the entire space-time auxiliary field
     from scratch
 
-    # Arguments
-    auxfield -> the entire Ns*L auxiliary field
+        # Arguments
+        auxfield -> the entire Ns*L auxiliary field
 
-    # Returns
-    F -> matrix decompositions with Matrix(F) = BL...B1
+        # Returns
+        F -> matrix decompositions with Matrix(F) = BL...B1
     """
     Ns = system.V
+    N = system.N
+    ϵ = qmc.lrThld
 
     if qmc.isLowrank
         F = [UDTlr(Ns), UDTlr(Ns)]
@@ -32,27 +34,28 @@ function initial_propagation(
 
         for j = 1 : qmc.stab_interval
             @views σ = auxfield[:, (i - 1) * qmc.stab_interval + j]
-            singlestep_matrix!(B, σ, system)
+            singlestep_matrix!(B[1], B[2], σ, system)
             MP.B[i] = B[1] * MP.B[i]            # spin-up
             MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
         end
 
         qmc.isLowrank ? 
-            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[K + i], F[2], system.N[2], qmc.lrThld)] :
+            F = [QR_lmul(MP.B[i], F[1], N[1], ϵ), QR_lmul(MP.B[K + i], F[2], N[2], ϵ)] :
             F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[K + i], F[2])]
 
     end
 
     return F, MP
-
 end
 
-function full_propagation(MP::Cluster{T}, system::System, qmc::QMC) where T
+function run_full_propagation(MP::Cluster{T}, system::System, qmc::QMC; K = qmc.K) where T
     """
-    Full propagation over the entire space-time auxiliary field 
-    for test purposes
+        Full propagation over the entire space-time auxiliary field 
+    given the matrix cluster
     """
     Ns = system.V
+    N = system.N
+    ϵ = qmc.lrThld
 
     if qmc.isLowrank
         F = [UDTlr(Ns), UDTlr(Ns)]
@@ -62,18 +65,18 @@ function full_propagation(MP::Cluster{T}, system::System, qmc::QMC) where T
         F = [UDR(Ns), UDR(Ns)]
     end
 
-    for i in 1 : qmc.K
+    for i in 1 : K
         qmc.isLowrank ?
-            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[qmc.K + i], F[2], system.N[2], qmc.lrThld)] :
-            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[qmc.K + i], F[2])]
+            F = [QR_lmul(MP.B[i], F[1], N[1], ϵ), QR_lmul(MP.B[K + i], F[2], N[2], ϵ)] :
+            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[K + i], F[2])]
     end
+
     return F
 end
 
-function partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::Vector{Int64}) where T
+function run_partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::Vector{Int64}) where T
     """
-    Propagation over the space-and-partial-time field
-    for calibration and test purposes
+        Propagation over the space-and-partial-time field for calibration and test purposes
     """
     Ns = system.V
 
@@ -84,6 +87,8 @@ function partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::Vector
     else
         F = [UDR(Ns), UDR(Ns)]
     end
+
+    length(a) == 0 && return F
 
     for i in a
         qmc.isLowrank ?
@@ -116,31 +121,6 @@ function update_matrices!(
     end
 end
 
-function calibrate(system::System, qmc::QMC, cluster::Cluster{T}, cidx::Int64) where T
-    """
-    Factorization matrices need to be recalculated periodically
-
-    # Arguments
-    cidx -> cluster index
-    """
-    Ns = system.V
-
-    if qmc.isLowrank
-        FL = [UDTlr(Ns), UDTlr(Ns)]
-    elseif qmc.isCP
-        FL = [UDT(Ns), UDT(Ns)]
-    else
-        FL = [UDR(Ns), UDR(Ns)]
-    end
-
-    if cidx == qmc.K
-        return FL
-    else
-        FL = partial_propagation(cluster, system, qmc, collect(cidx + 1 : qmc.K))
-        return FL
-    end
-end
-
 """
     Repartition scheme
 """
@@ -148,11 +128,14 @@ function repartition(F::UDTlr{T}, γ::Float64) where {T<:FloatType}
     d = F.D
     l = length(F.t)
     # truncate from above
-    Nu = div(2 * l, 3)
-    while Nu > div(l, 3) && d[Nu + 1] / d[Nu] > γ
-        Nu -= 1
+    Nu = div(l, 3)
+    γmin = d[Nu + 1] / d[Nu]
+
+    for Nt = div(l, 3) : div(2 * l, 3)
+        d[Nt + 1] / d[Nt] < γmin && (γmin = d[Nt + 1] / d[Nt]; Nu = Nt)
     end
-    Nu < div(l, 3) && return eigvals(F)
+    
+    γmin > γ && return eigvals(F), []
     tocc = 1 : Nu
     tf = Nu + 1 : F.t.stop
 

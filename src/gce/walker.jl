@@ -15,7 +15,7 @@ function GCEWalker(system::System, qmc::QMC; auxfield = 2 * (rand(system.V, syst
     """
     L = size(auxfield)[2]
     (L % qmc.stab_interval == 0) || @error "# of time slices should be divisible by the stablization interval"
-    F, cluster = initial_propagation(auxfield, system, qmc, K = div(L, qmc.stab_interval))
+    F, cluster = run_full_propagation(auxfield, system, qmc, K = div(L, qmc.stab_interval))
 
     expβμ = exp(system.β * μ)
     # Factorizations are shifted by exp(-ΔτK) to make the following updates rank-1

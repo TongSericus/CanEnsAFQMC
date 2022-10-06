@@ -1,79 +1,60 @@
 Base.@kwdef struct Cluster{T}
     B::Vector{T}
 end
-Base.prod(C::Cluster{T}, a::UnitRange{Int64}) where T = prod(C.B[a])
-Base.prod(C::Cluster{T}, a::StepRange{Int64, Int64}) where T = prod(C.B[a])
-Cluster(Ns::Int64, N::Int64) = Cluster(B = SizedMatrix{Ns, Ns}.([Matrix(1.0I, Ns, Ns) for _ in 1 : N]))
+Base.prod(C::Cluster{T}, a::UnitRange{Int64}) where T = @views prod(C.B[a])
+Base.prod(C::Cluster{T}, a::StepRange{Int64, Int64}) where T = @views prod(C.B[a])
+Cluster(Ns::Int64, N::Int64) = Cluster(B = [Matrix(1.0I, Ns, Ns) for _ in 1 : N])
 
-struct Walker{T1<:FloatType, T2<:FloatType, F<:Factorization{T2}, T}
+struct TempData{Tf<:Number, Tp<:Number, F<:Factorization{Tf}, C}
     """
-        All the MC information carried by a single walker
+        Preallocated data
+        FL/FR = (Q, D, T) -> matrix decompositions of the walker are stored and updated as the propagation goes
+        FM -> merge of FL and FR
+        P -> Poisson-binomial matrix
+    """
+    FL::Vector{F}
+    FR::Vector{F}
+    FM::Vector{F}
+    P::Matrix{Tp}
+    cluster::Cluster{C}
+end
+
+struct Walker{Tw<:Number, Tf<:Number, F<:Factorization{Tf}, Tp<:Number, C}
+    """
+        All the MC information stored in a single walker
 
         weight -> weight of the walker (spin-up/down portions are stored separately)
-        Pl -> ratio between the weights before and after every update step
         auxfield -> configurations of the walker
-        F = (Q, D, T) -> matrix decompositions of the walker are stored and updated as the propagation goes
+        cluster -> matrix multiplication is also stored
     """
-    weight::Vector{T1}
+    weight::Vector{Tw}
     auxfield::Matrix{Int64}
-    F::Vector{F}
-    cluster::Cluster{T}
+    tempdata::TempData{Tf, Tp, F, C}
+    cluster::Cluster{C}
 end
 
 function Walker(system::System, qmc::QMC; auxfield = 2 * (rand(system.V, system.L) .< 0.5) .- 1)
     """
-    Initialize a walker with a random configuration
+        Initialize a walker with a random configuration
     """
-    L = size(auxfield)[2]
+    L = system.L
+    Ns = system.V
+    k = qmc.stab_interval
+
     (L % qmc.stab_interval == 0) || @error "# of time slices should be divisible by the stablization interval"
-    F, cluster = initial_propagation(auxfield, system, qmc, K = div(L, qmc.stab_interval))
-    # diagonalize the decomposition
-    λ = [eigvals(F[1]), eigvals(F[2])]
-    # calculate the statistical weight
-    logZ = [
-        pf_recursion(length(λ[1]), system.N[1], λ[1]),
-        pf_recursion(length(λ[2]), system.N[2], λ[2])
-    ]
 
-    return Walker{eltype(logZ), eltype(F[1].U), typeof(F[1]), eltype(cluster.B)}(logZ, auxfield, F, cluster)
-end
+    FL, cluster = run_full_propagation(auxfield, system, qmc, K = div(L, qmc.stab_interval))
+    if qmc.isLowrank
+        FR = [UDTlr(Ns), UDTlr(Ns)]
+    elseif qmc.isCP
+        FR = [UDT(Ns), UDT(Ns)]
+    else
+        FR = [UDR(Ns), UDR(Ns)]
+    end
 
-struct ConstrainedWalker{T1<:FloatType, T2<:FloatType}
-    """
-        All the sampling information carried by a single walker
+    tempdata = TempData(FL, FR, deepcopy(FR), zeros(ComplexF64, system.V+1, system.V), Cluster(system.V, 2 * k))
 
-        weight -> weight of the walker
-        Pl -> ratio between the weights before and after every update step
-        auxfield -> configurations of the walker
-        Q, D, T -> matrix decompositions of the walker are stored and updated as the propagation goes
-    """
-    weight::Vector{T1}
-    Pl::Vector{Float64}
-    auxfield::Array{Int64,2}
-    F::Vector{UDT{T2}}
-end
+    weight = [calc_pf(FL[1], system.N[1], PMat=tempdata.P), calc_pf(FL[2], system.N[2], PMat=tempdata.P)]
 
-function ConstrainedWalker(system::System, qmc::QMC)
-    """
-    Initialize a constrained walker with a random configuration
-    """
-    # initialize a random field configuration
-    auxfield = zeros(Int64, system.V, system.L)
-    F = full_propagation(auxfield, system, qmc)
-    # diagonalize the decomposition
-    expβϵ = [eigvals(F[1]), eigvals(F[2])]
-    # calculate the statistical weight
-    Z = [
-        pf_recursion(system.V, system.N[1], expβϵ[1]),
-        pf_recursion(system.V, system.N[2], expβϵ[2])
-    ]
-
-    # construct the walker
-    system.isReal && return ConstrainedWalker{Float64, eltype(F[1].U)}(real(Z), [1.0, 1.0], auxfield, F)
-    return ConstrainedWalker{ComplexF64, eltype(F[1].U)}(Z, [1.0, 1.0], auxfield, F)
-end
-
-init_walker_list(system::System, qmc::QMC) = let 
-    walker = ConstrainedWalker(system, qmc)
-    [deepcopy(walker) for _ = 1 : qmc.ntotwalkers]
+    return Walker(weight, auxfield, tempdata, cluster)
 end

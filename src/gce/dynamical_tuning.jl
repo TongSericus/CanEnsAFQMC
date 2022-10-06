@@ -25,10 +25,12 @@ function dynamical_tuning(
         # in case the sign problem is severe, collect multiple samples before averaging
         for i = 1 : mT
             walker = sweep!(system, qmc, walker)
-            sgn = sign(det(walker.G[1])) * sign(det(walker.G[2]))
+            G = unshiftG(walker, system)
+            G = [I - G[1]', I - G[2]']
+            sgn = sign(det(G[1])) * sign(det(G[2]))
             push!(tuner.sgn, sgn)
 
-            n = [walker.G[1][i, i] + walker.G[2][i, i] for i in 1 : system.V]
+            n = [G[1][i, i] + G[2][i, i] for i in 1 : system.V]
             N = sum(n)
             Nsqd = sum(n * n') - sum(n.^2) + N
             push!(tuner.Nt, real(N * sgn))

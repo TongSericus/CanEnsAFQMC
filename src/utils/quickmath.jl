@@ -33,10 +33,11 @@ function quick_rotation(expiφ::Vector{ComplexF64}, N::Int64, isConj::Bool = fal
 end
 
 function poissbino(
-    Ns::Int64, ϵ::Array{T,1}, 
-    isNormalized::Bool = false;
+    Ns::Int64, ϵ::Array{T,1};
+    isNormalized::Bool = false,
+    P = zeros(eltype(ϵ), Ns + 1, Ns),
     cutoff = 1e-10
-) where {T<:FloatType}
+) where {T<:Number}
     """
     A regularized version of the recursive calculation for the Poisson binomial
     distribution
@@ -55,8 +56,6 @@ function poissbino(
         ν1 = ϵ ./ (1 .+ ϵ)
         ν2 = 1 ./ (1 .+ ϵ)
     end
-    # culmulative probability distribution
-    P = zeros(T, Ns + 1, Ns)
 
     # Initialization
     P[1, 1] = ν2[1]
@@ -70,7 +69,7 @@ function poissbino(
         end
     end
 
-    return P[:, Ns]
+    return P
 end
 
 function sum_antidiagonal(A::AbstractMatrix)

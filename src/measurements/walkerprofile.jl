@@ -1,4 +1,4 @@
-struct WalkerProfile{W<:FloatType, E<:FloatType, Ns}
+struct WalkerProfile{W<:FloatType, E<:FloatType, Tg<:FloatType}
     """
         All the measurement-related information of a single walker
     """
@@ -6,14 +6,19 @@ struct WalkerProfile{W<:FloatType, E<:FloatType, Ns}
     expβϵ::Vector{E}
     P::Matrix{E}
     invP::Matrix{E}
-    G::SizedMatrix{Ns, Ns, ComplexF64}
+    G::Matrix{Tg}
+end
+
+function computeG(F::UDTlr, N::Int64)
+    λ, Pocc, invPocc = eigen(F)
+    ni = occ_recursion(length(λ), N, λ)
+    G = Pocc * Diagonal(ni) * invPocc
 end
 
 function WalkerProfile(system::System, walker::Walker, spin::Int64)
     λ, Pocc, invPocc = eigen(walker.F[spin])
     ni = occ_recursion(length(λ), system.N[spin], λ)
     G = Pocc * Diagonal(ni) * invPocc
-    G = SizedMatrix{system.V, system.V, ComplexF64}(complex(G))
 
-    return WalkerProfile{eltype(walker.weight), eltype(λ), system.V}(walker.weight[spin], λ, Pocc, invPocc, G)
+    return WalkerProfile{eltype(walker.weight), eltype(λ), eltype{G}}(walker.weight[spin], λ, Pocc, invPocc, G)
 end

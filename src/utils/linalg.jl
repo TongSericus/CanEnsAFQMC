@@ -5,7 +5,7 @@
     See (https://github.com/carstenbauer/StableDQMC.jl)
 """
 ### QRCP (column-pivoting) decomposion ###
-struct UDT{T<:FloatType} <: Factorization{T}
+struct UDT{T} <: Factorization{T}
     U::Matrix{T}
     D::Vector{T}
     T::Matrix{T}
@@ -31,7 +31,7 @@ end
 
 UDT(n::Int64) = UDT(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n))
 
-function UDT(A::Matrix{T}) where {T<:FloatType}
+function UDT(A::AbstractMatrix{T}) where {T<:Number}
     F = qr!(A, Val(true))
     n = size(F.R)
     D = Vector{T}(undef, n[1])
@@ -39,15 +39,15 @@ function UDT(A::Matrix{T}) where {T<:FloatType}
     @views F.p[F.p] = 1 : n[2]
 
     @inbounds for i in 1 : n[1]
-        D[i] = abs(R[i, i])
+        D[i] = abs(real(R[i, i]))
     end
     lmul!(Diagonal(1 ./ D), R)
     UDT(Matrix(F.Q), D, R[:, F.p])
 end
 
 function UDT(
-    D::Vector{T1}, P::Matrix{T2}, invP::Matrix{T2}
-) where {T1<:FloatType, T2<:FloatType}
+    D::Vector{Td}, P::Matrix{Tp}, invP::Matrix{Tp}
+) where {Td<:Number, Tp<:Number}
     """
     Transform P * D * P^-1 into UDT form
     """
@@ -86,6 +86,24 @@ function QR_merge(A::UDT, B::UDT)
     UDT(A.U * F.U, F.D, F.T * B.T)
 end
 
+function QR_merge!(C::UDT, A::UDT, B::UDT)
+    """
+    Compute UaDaTa * UbDbTb
+    """
+    mat = A.T * B.U
+    lmul!(Diagonal(A.D), mat)
+    rmul!(mat, Diagonal(B.D))
+    F = UDT(mat)
+
+    mul!(C.U, A.U, F.U)
+    mul!(C.T, F.T, B.T)
+    @inbounds for i in 1 : length(F.D)
+        C.D[i] = F.D[i]
+    end
+
+    return C
+end
+
 function QR_sum(A::UDT, B::UDT)
     """
     Compute UaDaTa + UbDbTb
@@ -105,7 +123,7 @@ function QR_sum(A::UDT, B::UDT)
 end
 
 ### Regular QR decomposion ###
-struct UDR{T<:FloatType} <: Factorization{T}
+struct UDR{T} <: Factorization{T}
     U::Matrix{T}
     D::Vector{T}
     R::Matrix{T}
@@ -130,7 +148,7 @@ end
 
 UDR(n::Int64) = UDR{Float64}(Matrix(1.0I, n, n), ones(Float64, n), Matrix(1.0I, n, n))
 
-function UDR(A::Matrix{T}) where {T<:FloatType}
+function UDR(A::AbstractMatrix{T}) where {T<:Number}
     F = qr!(A)
     n = size(A, 1)
     D = Vector{T}(undef, n)

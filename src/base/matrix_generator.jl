@@ -70,60 +70,12 @@ function singlestep_matrix(σ::AbstractArray{Int64}, system::System)
 end
 
 function singlestep_matrix!(
-    B::Vector{Matrix{T}}, σ::AbstractArray{Int64}, system::System
-    ) where {T<:FloatType}
+    B1::AbstractMatrix{T}, B2::AbstractMatrix{T}, σ::AbstractArray{Int64}, system::System
+) where {T<:FloatType}
     """
     Compute B = Bk/2 * Bv * Bk/2
     """
     afmat = auxfield_matrix_hubbard(σ, system.auxfield)
-    mul!(B[1], system.Bk, Diagonal(afmat[1]) * system.Bk)
-    mul!(B[2], system.Bk, Diagonal(afmat[2]) * system.Bk)
-end
-
-function generate_rmat(system::System)
-    """
-    Compute all r1 - r2 that would be used in the momentum distribution calculations
-    """
-    # 1D system
-    if system.Ns[2] == 1
-        rmat = zeros(Int64, system.V, system.V)
-        for r1 = 1 : system.Ns[1]
-            for r2 = r1 : system.Ns[1]
-                rmat[r1, r2] = r1 - r2
-                rmat[r2, r1] = -rmat[r1, r2]
-            end
-        end
-        return rmat
-    end
-
-    # 2D system
-    rmat = reshape([[0, 0] for _ = 1 : system.V ^ 2], (system.V, system.V))
-    for r1 = 1 : system.Ns[1]^2
-        for r2 = r1 : system.Ns[1]^2
-            r1x, r1y = decode_basis(r1, Ns[1])
-            r2x, r2y = decode_basis(r2, Ns[1])
-            rmat[r1, r2] = [r1x - r2x, r1y - r2y]
-            rmat[r2, r1] = -rmat[r1, r2]
-        end
-    end
-    return rmat
-end
-
-function generate_DFTmat(
-    kpath::Vector{Vector{Float64}}, rmat::Matrix{Vector{T}}
-) where {T <: Real}
-    """
-    Generate the discrete Fourier transform matrices
-    """
-    DFTmats = Vector{Matrix{ComplexF64}}()
-    for k in kpath
-        DFTmat = similar(rmat, ComplexF64)
-        fill!(DFTmat, 0.0)
-        for (i, r) in enumerate(rmat)
-            DFTmat[i] = exp(im * dot(k, r))
-        end
-        push!(DFTmats, DFTmat)
-    end
-
-    return DFTmats
+    mul!(B1, system.Bk, Diagonal(afmat[1]) * system.Bk)
+    mul!(B2, system.Bk, Diagonal(afmat[2]) * system.Bk)
 end
