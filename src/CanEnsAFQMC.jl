@@ -7,12 +7,10 @@ export FloatType
 include("./base/constants.jl")
 
 export QMC, GeneralMeasure, EtgMeasure
-export System, Hubbard
-export RegSample, GCESample
+export System, Hubbard, nudge_system
 include("./base/systems.jl")
 include("./base/matrix_generator.jl")
 include("./base/variable.jl")
-include("./base/sampling.jl")
 
 export sgn, fermilevel, poissbino, sum_antidiagonal
 include("./utils/quickmath.jl")
@@ -29,7 +27,7 @@ include("./utils/linalg_lowrank.jl")
 export Walker, Cluster, ConstrainedWalker
 include("./propagation/walker.jl")
 include("./propagation/operations.jl")
-export sweep!, move_walker
+export sweep!, reverse_sweep!
 include("./propagation/metropolis.jl")
 include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")
@@ -39,14 +37,14 @@ include("./gce/walker.jl")
 include("./gce/operations.jl")
 include("./gce/propagation.jl")
 
-export WalkerProfile,
-    measure_energy,
-    measure_renyi2_entropy,
-    measure_transition_probability,
+export DensityMatrices, fill_DM!,
+    measure_Energy,
+    measure_HeatCapacity_denom, measure_HeatCapacity_num,
+    measure_TransitProb,
     generate_DFTmats, measure_nk
-include("./measurements/walkerprofile.jl")
+include("./measurements/density_matrix.jl")
 include("./measurements/energy.jl")
-include("./measurements/entanglements.jl")
+include("./measurements/heat_capacity.jl")
 include("./measurements/momentum_dist.jl")
 include("./measurements/transition_probability.jl")
 

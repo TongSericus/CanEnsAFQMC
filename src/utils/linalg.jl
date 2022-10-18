@@ -19,6 +19,18 @@ Base.iterate(S::UDT, ::Val{:done}) = nothing
 
 Base.similar(S::UDT) = UDT(similar(S.U), similar(S.D), similar(S.T))
 
+collectU(S::Vector{UDT{Ts}}) where Ts = [S[i].U for i in 1 : length(S)]
+collectD(S::Vector{UDT{Ts}}) where Ts = [S[i].D for i in 1 : length(S)]
+collectT(S::Vector{UDT{Ts}}) where Ts = [S[i].T for i in 1 : length(S)]
+
+Base.copyto!(F::UDT{T}, S::UDT{T}, ignore...) where {T} = let
+    copyto!(F.U, S.U)
+    copyto!(F.D, S.D)
+    copyto!(F.T, S.T)
+
+    nothing
+end
+
 Base.Matrix(S::UDT) = (S.U * Diagonal(S.D)) * S.T
 
 # stable linear algebra operations

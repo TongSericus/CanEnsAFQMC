@@ -61,7 +61,7 @@ function poissbino(
     P[1, 1] = ν2[1]
     P[2, 1] = ν1[1]
     # iteration over trials
-    for i = 2 : Ns
+    @inbounds for i = 2 : Ns
         P[1, i] = ν2[i] * P[1, i - 1]
         # iteration over number of successes
         for j = 2 : i + 1

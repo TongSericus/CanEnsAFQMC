@@ -14,7 +14,7 @@ function pf_recursion(
     P = zeros(eltype(expβϵ), Ns + 1, Ns)
 ) where {T<:Number}
     """
-        Recursive calculation of the partition function
+    Recursive calculation of the partition function
     """
     isReal || (expβϵ = complex(expβϵ))
 
@@ -49,7 +49,7 @@ function occ_recursion(
     P = zeros(eltype(expβϵ), Ns + 1, Ns)
 ) where {T<:Number}
     """
-        Recursive calculation of the occupation number
+    Recursive calculation of the occupation number
     """
     isReal || (expβϵ = complex(expβϵ))
 
@@ -76,16 +76,16 @@ end
 
 function occ_recursion_rescaled(
     Ns::Int64, N::Int64,
-    expβϵμ::AbstractArray{T}, P::AbstractArray{T};
+    expβϵμ::AbstractArray{Te}, P::AbstractArray{Tp};
     isReverse::Bool = false
-) where T
+) where {Te, Tp}
     """
-        Level occupancy recursion using the rescaled spectrum
+    Level occupancy recursion using the rescaled spectrum
     """
     Ñs = length(expβϵμ)
     if !isReverse
         n = zeros(ComplexF64, N + 1, Ñs)
-        for i = 2 : N
+        @inbounds for i = 2 : N
             n[i + 1, :] = (P[i] / P[i + 1]) * expβϵμ .* (1 .- n[i, :])
             # Truncate the values that are smaller than 10^-10
             n[i + 1, :] = n[i + 1, :] .* (abs.(real(n[i + 1, :])) .> 1e-10)
@@ -95,7 +95,7 @@ function occ_recursion_rescaled(
         # num. of reverse recursions
         N_rev = Ns - N
         n = ones(ComplexF64, N_rev, Ñs)
-        for i = 1 : N_rev - 1
+        @inbounds for i = 1 : N_rev - 1
             n[i + 1, :] = (P[Ns - i + 1] / P[Ns - i]) * n[i, :] ./ expβϵμ
             # Truncate the values that are smaller than 10^-10
             n[i + 1, :] = n[i + 1, :] .* (abs.(real(n[i + 1, :])) .> 1e-10)
@@ -106,22 +106,28 @@ function occ_recursion_rescaled(
 end
 
 function second_order_corr(
-    Ns::Int64, expβϵ::Array{T,1}, ni::Array{T,1}
-) where {T<:FloatType}
+    expβϵ::Array{T,1}, ni::Array{T,1};
+    Ns = length(expβϵ), ninj = zeros(T, Ns, Ns)
+) where {T<:Number}
     """
     Generate second-order correlation matrix, i.e., ⟨n_{i} n_{j}⟩ using the formula:
-        ⟨n_{i} n_{j}⟩ = (n_{i}/expβϵ_{i} - n_{j}/expβϵ_{j}) / (1/expβϵ_{i} - 1/expβϵ_{j}).
+    ⟨n_{i} n_{j}⟩ = (n_{i}/expβϵ_{i} - n_{j}/expβϵ_{j}) / (1/expβϵ_{i} - 1/expβϵ_{j}).
+
     Practically, degenerate levels (expβϵ_{i} = expβϵ_{j}) should be super rare so we dont consider it here.
     """
-    nij = zeros(T, Ns, Ns)
-    expβϵ_inv = 1 ./ expβϵ
-    for i = 2 : Ns
-        niexpβϵ = ni[i] * expβϵ_inv[i]
-        for j = 1 : i - 1
-            njexpβϵ = ni[j] * expβϵ_inv[j]
-            nij[i, j] = (niexpβϵ - njexpβϵ) / (expβϵ_inv[i] - expβϵ_inv[j])
-            nij[j, i] = nij[i, j]
+    @inbounds for i in 1 : Ns
+        ninj[i, i] = ni[i]
+    end
+
+    λ = 1 ./ expβϵ
+    @inbounds for i in 2 : Ns
+        niexpβϵ = ni[i] * λ[i]
+        for j in 1 : i - 1
+            njexpβϵ = ni[j] * λ[j]
+            ninj[j, i] = (njexpβϵ - niexpβϵ) / (λ[j] - λ[i])
+            ninj[i, j] = ninj[j, i]
         end
     end
-    return nij
+
+    return ninj
 end

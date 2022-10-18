@@ -3,7 +3,8 @@
 """
 
 function run_full_propagation(
-    auxfield::Matrix{Int64}, system::System, qmc::QMC; K = qmc.K
+    auxfield::AbstractMatrix{Int64}, system::System, qmc::QMC; 
+    K = qmc.K, stab_interval = qmc.stab_interval, K_interval = qmc.K_interval
 )
     """
         Stable propagation over the entire space-time auxiliary field
@@ -27,25 +28,29 @@ function run_full_propagation(
         F = [UDR(Ns), UDR(Ns)]
     end
 
+    FC = Cluster(F[1], 2 * K)
+
     B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
-    MP = Cluster(Ns, K * 2)
+    MP = Cluster(Ns, 2 * K)
 
     for i in 1 : K
 
-        for j = 1 : qmc.stab_interval
-            @views σ = auxfield[:, (i - 1) * qmc.stab_interval + j]
+        for j = 1 : K_interval[i]
+            @views σ = auxfield[:, (i - 1) * stab_interval + j]
             singlestep_matrix!(B[1], B[2], σ, system)
             MP.B[i] = B[1] * MP.B[i]            # spin-up
             MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
         end
 
+        copyto!(FC.B[i], F[1])
+        copyto!(FC.B[K + i], F[2])
+
         qmc.isLowrank ? 
             F = [QR_lmul(MP.B[i], F[1], N[1], ϵ), QR_lmul(MP.B[K + i], F[2], N[2], ϵ)] :
             F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[K + i], F[2])]
-
     end
 
-    return F, MP
+    return F, MP, FC
 end
 
 function run_full_propagation(MP::Cluster{T}, system::System, qmc::QMC; K = qmc.K) where T
@@ -72,53 +77,6 @@ function run_full_propagation(MP::Cluster{T}, system::System, qmc::QMC; K = qmc.
     end
 
     return F
-end
-
-function run_partial_propagation(MP::Cluster{T}, system::System, qmc::QMC, a::Vector{Int64}) where T
-    """
-        Propagation over the space-and-partial-time field for calibration and test purposes
-    """
-    Ns = system.V
-
-    if qmc.isLowrank
-        F = [UDTlr(Ns), UDTlr(Ns)]
-    elseif qmc.isCP
-        F = [UDT(Ns), UDT(Ns)]
-    else
-        F = [UDR(Ns), UDR(Ns)]
-    end
-
-    length(a) == 0 && return F
-
-    for i in a
-        qmc.isLowrank ?
-            F = [QR_lmul(MP.B[i], F[1], system.N[1], qmc.lrThld), QR_lmul(MP.B[qmc.K + i], F[2], system.N[2], qmc.lrThld)] :
-            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[qmc.K + i], F[2])]
-    end
-    return F
-end
-
-function update_matrices!(F0::UDT, Ft::UDT)
-    F0.U .= Ft.U
-    F0.D .= Ft.D
-    F0.T .= Ft.T
-end
-
-function update_matrices!(F0::UDR, Ft::UDR)
-    F0.U .= Ft.U
-    F0.D .= Ft.D
-    F0.R .= Ft.R
-end
-
-function update_matrices!(
-    F0::Vector{UDR{T}}, Ft::Vector{UDR{T}}
-) where {T<:FloatType}
-    length(F0) == length(Ft) || @error "Mismatching Size"
-    for i in 1 : length(F0)
-        F0[i].U .= Ft[i].U
-        F0[i].D .= Ft[i].D
-        F0[i].R .= Ft[i].R
-    end
 end
 
 """

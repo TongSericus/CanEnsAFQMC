@@ -18,10 +18,12 @@ struct QMC
     ### MCMC (Metropolis) ###
     nwarmups::Int64
     nsamples::Int64
+    measure_interval::Int64
     ### Numerical Stablization ###
     isCP::Bool
     stab_interval::Int64
     K::Int64
+    K_interval::Vector{Int64}
     update_interval::Int64
     ### Speed-ups ###
     isLowrank::Bool
@@ -29,15 +31,21 @@ struct QMC
     isRepart::Bool
     rpThld::Float64
 
-    function QMC(system::System, nwarmups::Int64, nsamples::Int64,
+    function QMC(system::System, nwarmups::Int64, nsamples::Int64, measure_interval::Int64,
         isCP::Bool, stab_interval::Int64, update_interval::Int64,
         isLowrank::Bool, lrThld::Float64,
         isRepart::Bool, rpThld::Float64
     )
-        (system.L % stab_interval == 0) || @error "# of time slices should be divisible by the stablization interval"
+        # number of clusters
+        system.L % stab_interval == 0 ? K = div(system.L, stab_interval) : K = div(system.L, stab_interval) + 1
+        # group the rest of the matrices as the last cluster
+        Le = mod(system.L, stab_interval)
+        K_interval = [stab_interval for _ in 1 : K]
+        Le == 0 || (K_interval[end] = Le)
+
         return new(
-            nwarmups, nsamples,
-            isCP, stab_interval, div(system.L, stab_interval), update_interval,
+            nwarmups, nsamples, measure_interval,
+            isCP, stab_interval, K, K_interval, update_interval,
             isLowrank, lrThld, isRepart, rpThld
         )
     end

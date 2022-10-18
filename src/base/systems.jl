@@ -67,3 +67,20 @@ mutable struct Hubbard <: System
         )
     end
 end
+
+function nudge_system(system::Hubbard, δβ::Float64)
+    """
+    Generate system struct with β' = β ± δβ
+    """
+    system_pβ = Hubbard(
+        system.Ns, system.N, system.t, system.U, system.μ,
+        system.β + δβ, system.L
+    )
+
+    system_mβ = Hubbard(
+        system.Ns, system.N, system.t, system.U, system.μ,
+        system.β - δβ, system.L
+    )
+
+    return system_pβ, system_mβ
+end
