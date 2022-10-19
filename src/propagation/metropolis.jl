@@ -69,7 +69,7 @@ function update_cluster!(
     k = qmc.K_interval[cidx]
     K = qmc.K
     P = walker.tempdata.P
-    Bl = walker.tempdata.cluster
+    Bl = walker.tempdata.cluster.B
     cluster = walker.cluster
 
     U1, D1, R1 = F1
@@ -79,22 +79,22 @@ function update_cluster!(
 
     for i in 1 : k
         σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl.B[i], Bl.B[k + i], σ, system)
-        R1 *= inv(Bl.B[i])
-        R2 *= inv(Bl.B[k + i])
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        R1 *= inv(Bl[i])
+        R2 *= inv(Bl[k + i])
 
         global_flip!(
             system, walker.weight, σ, P,
-            UDT(U1, D1, R1), Bl.B[i],
-            UDT(U2, D2, R2), Bl.B[k + i]
+            UDT(U1, D1, R1), Bl[i],
+            UDT(U2, D2, R2), Bl[k + i]
         )
 
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
+        U1 = Bl[i] * U1
+        U2 = Bl[k + i] * U2
     end
 
-    cluster.B[cidx] = prod(Bl, collect(k:-1:1))
-    cluster.B[K + cidx] = prod(Bl, collect(2*k:-1:k+1))
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
 
     return nothing
 end
@@ -235,8 +235,8 @@ function global_flip!(
     r = abs(exp(sum(weight_new) - sum(weight_old)))
     if rand() < min(1, r)
         weight_old .= weight_new
-        Bl1 .= Bltmp[1]
-        Bl2 .= Bltmp[2]
+        copyto!(Bl1, Bltmp[1])
+        copyto!(Bl2, Bltmp[2])
     else
         σ .*= σ_flip
     end
@@ -255,7 +255,7 @@ function update_cluster!(
     K = qmc.K
     
     P = walker.tempdata.P
-    Bl = walker.tempdata.cluster
+    Bl = walker.tempdata.cluster.B
     cluster = walker.cluster
 
     U1, D1, R1 = F1
@@ -265,22 +265,22 @@ function update_cluster!(
 
     for i in 1 : k
         σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl.B[i], Bl.B[k + i], σ, system)
-        R1 *= inv(Bl.B[i])
-        R2 *= inv(Bl.B[k + i])
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        R1 *= inv(Bl[i])
+        R2 *= inv(Bl[k + i])
 
         global_flip!(
             system, walker.weight, σ, P,
-            UDTlr(U1, D1, R1, F1.t), Bl.B[i],
-            UDTlr(U2, D2, R2, F2.t), Bl.B[k + i]
+            UDTlr(U1, D1, R1, F1.t), Bl[i],
+            UDTlr(U2, D2, R2, F2.t), Bl[k + i]
         )
 
-        U1 = Bl.B[i] * U1
-        U2 = Bl.B[k + i] * U2
+        U1 = Bl[i] * U1
+        U2 = Bl[k + i] * U2
     end
 
-    cluster.B[cidx] = prod(Bl, collect(k:-1:1))
-    cluster.B[K + cidx] = prod(Bl, collect(2*k:-1:k+1))
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
 
     return nothing
 end
