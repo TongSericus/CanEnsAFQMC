@@ -1,7 +1,7 @@
 module CanEnsAFQMC
 
 using Reexport: @reexport
-@reexport using DoubleFloats, LinearAlgebra, Statistics, Random, FFTW
+@reexport using DoubleFloats, LinearAlgebra, StableLinearAlgebra, Statistics, Random, FFTW
 
 export FloatType
 include("./base/constants.jl")
@@ -20,7 +20,8 @@ include("./utils/ce_recursion.jl")
 include("./utils/ce_projection.jl")
 export UDT, UDR, UDTlr
 export QR_lmul, QR_lmul!, QR_rmul, QR_rmul!, 
-    QR_sum, QR_merge, QR_update
+    QR_sum, QR_merge, QR_merge!, QR_update,
+    inv_IpμA!
 include("./utils/linalg.jl")
 include("./utils/linalg_lowrank.jl")
 
@@ -32,10 +33,12 @@ include("./propagation/metropolis.jl")
 include("./propagation/constraint_path.jl")
 include("./propagation/replica.jl")
 
-export GCEWalker, computeG, unshiftG
+export GCEWalker, computeG, unshiftG,
+    GCWalker
 include("./gce/walker.jl")
 include("./gce/operations.jl")
 include("./gce/propagation.jl")
+include("./gce/replica.jl")
 
 export DensityMatrices, fill_DM!,
     measure_Energy,

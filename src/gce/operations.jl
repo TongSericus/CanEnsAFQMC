@@ -1,3 +1,4 @@
+### Old Scheme ###
 calc_pf(F::UDT, expβμ::Float64) = sum(log.(complex.(1 .+ expβμ*eigvals(F))))
 
 function shiftB(F::UDT, B::AbstractMatrix)
@@ -52,4 +53,36 @@ function recomputeG(system::System, qmc::QMC, walker::GCEWalker, cidx::Int64) wh
     G = [Matrix(F[1]), Matrix(F[2])]
 
     return GCEWalker{Float64, eltype(cluster.B)}(walker.α, expβμ, walker.auxfield, G, cluster)
+end
+
+### A New Scheme using StableLinearAlgebra Package ###
+function run_full_propagation(
+    auxfield::AbstractMatrix{Int64}, system::System, qmc::QMC, ws::LDRWorkspace{T}; 
+    K = qmc.K, stab_interval = qmc.stab_interval, K_interval = qmc.K_interval
+) where {T<:Number}
+    Ns = system.V
+
+    B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
+    MP = Cluster(Ns, 2 * K)
+
+    F = ldrs(B[1], 2)
+    FC = Cluster(B = ldrs(B[1], 2 * K))
+
+    for i in 1 : K
+
+        for j = 1 : K_interval[i]
+            @views σ = auxfield[:, (i - 1) * stab_interval + j]
+            singlestep_matrix!(B[1], B[2], σ, system)
+            MP.B[i] = B[1] * MP.B[i]            # spin-up
+            MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
+        end
+
+        copyto!(FC.B[i], F[1])
+        copyto!(FC.B[K + i], F[2])
+
+        lmul!(MP.B[i], F[1], ws)
+        lmul!(MP.B[K + i], F[2], ws)
+    end
+
+    return F, MP, FC
 end

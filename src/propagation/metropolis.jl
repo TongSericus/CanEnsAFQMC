@@ -137,6 +137,47 @@ function sweep!(
     return nothing
 end
 
+function update_cluster_reverse!(
+    walker::Walker{Tw, Tf, UDT{Tf}, Tp, C}, system::System, qmc::QMC, 
+    cidx::Int64, F1::UDT{T}, F2::UDT{T}
+) where {Tw, Tf, Tp, C, T}
+    """
+    Update the propagation matrices of size equaling to the stablization interval
+    """
+    k = qmc.K_interval[cidx]
+    K = qmc.K
+    
+    P = walker.tempdata.P
+    Bl = walker.tempdata.cluster.B
+    cluster = walker.cluster
+
+    U1, D1, R1 = F1
+    U2, D2, R2 = F2
+    U1 = cluster.B[cidx] * U1
+    U2 = cluster.B[K + cidx] * U2
+
+    for i in k : -1 : 1
+        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        U1 = inv(Bl[i]) * U1
+        U2 = inv(Bl[k + i]) * U2
+
+        global_flip!(
+            system, walker.weight, σ, P,
+            UDT(U1, D1, R1), Bl[i],
+            UDT(U2, D2, R2), Bl[k + i]
+        )
+
+        R1 *= Bl[i]
+        R2 *= Bl[k + i]
+    end
+
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
+
+    return nothing
+end
+
 function reverse_sweep!(
     system::System, qmc::QMC, 
     walker::Walker{Tw, Tf, UDT{Tf}, Tp, C}
@@ -156,7 +197,7 @@ function reverse_sweep!(
     for cidx in K : -1 : 1
         QR_merge!(tmpM[1], tmpR[cidx], tmpL[1])
         QR_merge!(tmpM[2], tmpR[cidx + K], tmpL[2])
-        update_cluster!(
+        update_cluster_reverse!(
             walker, system, qmc, cidx, tmpM[1], tmpM[2]
         )
 
@@ -323,6 +364,47 @@ function sweep!(
     return nothing
 end
 
+function update_cluster_reverse!(
+    walker::Walker{Tw, Tf, UDTlr{Tf}, Tp, C}, system::System, qmc::QMC, 
+    cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
+) where {Tw, Tf, Tp, C, T}
+    """
+    Update the propagation matrices of size equaling to the stablization interval
+    """
+    k = qmc.K_interval[cidx]
+    K = qmc.K
+    
+    P = walker.tempdata.P
+    Bl = walker.tempdata.cluster.B
+    cluster = walker.cluster
+
+    U1, D1, R1 = F1
+    U2, D2, R2 = F2
+    U1 = cluster.B[cidx] * U1
+    U2 = cluster.B[K + cidx] * U2
+
+    for i in k : -1 : 1
+        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        U1 = inv(Bl[i]) * U1
+        U2 = inv(Bl[k + i]) * U2
+
+        global_flip!(
+            system, walker.weight, σ, P,
+            UDTlr(U1, D1, R1, F1.t), Bl[i],
+            UDTlr(U2, D2, R2, F2.t), Bl[k + i]
+        )
+
+        R1 *= Bl[i]
+        R2 *= Bl[k + i]
+    end
+
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
+
+    return nothing
+end
+
 function reverse_sweep!(
     system::System, qmc::QMC, 
     walker::Walker{Tw, Tf, UDTlr{Tf}, Tp, C}
@@ -342,7 +424,7 @@ function reverse_sweep!(
     for cidx in K : -1 : 1
         QR_merge!(tmpM[1], tmpR[cidx], tmpL[1], N[1], qmc.lrThld)
         QR_merge!(tmpM[2], tmpR[cidx + K], tmpL[2], N[2], qmc.lrThld)
-        update_cluster!(
+        update_cluster_reverse!(
             walker, system, qmc, cidx, tmpM[1], tmpM[2]
         )
 

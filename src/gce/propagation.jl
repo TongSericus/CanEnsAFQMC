@@ -144,3 +144,213 @@ function sweep!(
 
     return walker1, walker2
 end
+
+### A New Scheme using StableLinearAlgebra Package ###
+function calc_trial(
+    σ::AbstractArray{Int64}, system::System, walker::GCWalker, F1::LDR{T,E}, F2::LDR{T,E}
+) where {T<:Number, E<:Real, C}
+    """
+    Compute the weight of a trial configuration using a potential repartition scheme
+    """
+    expβμ = walker.expβμ[]
+    G = walker.G
+    ws = walker.ws
+
+    weight = similar(walker.weight)
+    sign = similar(walker.sign)
+    Ltmp = similar(F1.L)
+
+    Btmp = singlestep_matrix(σ, system)
+
+    mul!(Ltmp, Btmp[1], F1.L)
+    Ftmp = LDR(Ltmp, F1.d, F1.R)
+    weight[1], sign[1] = inv_IpμA!(G[1], Ftmp, expβμ, ws)
+
+    mul!(Ltmp, Btmp[2], F2.L)
+    Ftmp = LDR(Ltmp, F2.d, F2.R)
+    weight[2], sign[2] = inv_IpμA!(G[2], Ftmp, expβμ, ws)
+
+    return -weight, sign, Btmp
+end
+
+function global_flip!(
+    system::System, walker::GCWalker, σ::AbstractArray,
+    F1::LDR{T,E}, Bl1::AbstractMatrix{Tm}, 
+    F2::LDR{T,E}, Bl2::AbstractMatrix{Tm}
+) where {Tm<:Number, T<:Number, E<:Real, C}
+    """
+    Select a fraction of sites and flip their spins
+    """
+    weight_old = walker.weight
+
+    σ_flip = 2 * (rand(system.V) .< 0.5) .- 1
+    σ .*= σ_flip
+    weight_new, sign_new, Bltmp = calc_trial(σ, system, walker, F1, F2)
+
+    # accept ratio
+    r = abs(exp(sum(weight_new) - sum(weight_old)))
+    if rand() < min(1, r)
+        weight_old .= weight_new
+        walker.sign .= sign_new
+
+        copyto!(Bl1, Bltmp[1])
+        copyto!(Bl2, Bltmp[2])
+    else
+        σ .*= σ_flip
+    end
+
+    return nothing
+end
+
+function update_cluster!(
+    walker::GCWalker, system::System, qmc::QMC, 
+    cidx::Int64, F1::LDR{T,E}, F2::LDR{T,E}
+) where {T<:Number, E<:Real}
+    """
+    Update the propagation matrices of size equaling to the stablization interval
+    """
+    k = qmc.K_interval[cidx]
+    K = qmc.K
+    Bl = walker.tempdata.cluster.B
+    cluster = walker.cluster
+
+    L1, d1, R1 = F1
+    L2, d2, R2 = F2
+    R1 *= cluster.B[cidx]
+    R2 *= cluster.B[K + cidx]
+
+    for i in 1 : k
+        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        R1 *= inv(Bl[i])
+        R2 *= inv(Bl[k + i])
+
+        global_flip!(
+            system, walker, σ,
+            LDR(L1, d1, R1), Bl[i],
+            LDR(L2, d2, R2), Bl[k + i]
+        )
+
+        L1 = Bl[i] * L1
+        L2 = Bl[k + i] * L2
+    end
+
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
+
+    return nothing
+end
+
+function sweep!(system::System, qmc::QMC, walker::GCWalker)
+    """
+    Sweep the walker over the entire space-time lattice
+    """
+    K = qmc.K
+
+    ws = walker.ws
+
+    cluster = walker.cluster
+    tempdata = walker.tempdata
+    tmpL = tempdata.FC.B
+    tmpR = tempdata.Fτ
+    tmpM = tempdata.FM
+
+    for cidx in 1 : K
+        mul!(tmpM[1], tmpR[1], tmpL[cidx], ws)
+        mul!(tmpM[2], tmpR[2], tmpL[K + cidx], ws)
+        update_cluster!(
+            walker, system, qmc, cidx, tmpM[1], tmpM[2]
+        )
+
+        copyto!(tmpL[cidx], tmpR[1])
+        copyto!(tmpL[K + cidx], tmpR[2])
+
+        lmul!(cluster.B[cidx], tmpR[1], ws)
+        lmul!(cluster.B[K + cidx], tmpR[2], ws)
+    end
+
+    # save the propagation results
+    copyto!.(walker.F, tmpR)
+    # then reset Fτ to unit matrix
+    ldr!(tmpR[1], I)
+    ldr!(tmpR[2], I)
+
+    return nothing
+end
+
+function update_cluster_reverse!(
+    walker::GCWalker, system::System, qmc::QMC, 
+    cidx::Int64, F1::LDR{T,E}, F2::LDR{T,E}
+) where {T<:Number, E<:Real, C}
+    """
+    Update the propagation matrices of size equaling to the stablization interval
+    """
+    k = qmc.K_interval[cidx]
+    K = qmc.K
+    
+    Bl = walker.tempdata.cluster.B
+    cluster = walker.cluster
+
+    L1, d1, R1 = F1
+    L2, d2, R2 = F2
+    L1 = cluster.B[cidx] * L1
+    L2 = cluster.B[K + cidx] * L2
+
+    for i in k : -1 : 1
+        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        L1 = inv(Bl[i]) * L1
+        L2 = inv(Bl[k + i]) * L2
+
+        global_flip!(
+            system, walker, σ,
+            LDR(L1, d1, R1), Bl[i],
+            LDR(L2, d2, R2), Bl[k + i]
+        )
+
+        R1 *= Bl[i]
+        R2 *= Bl[k + i]
+    end
+
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
+
+    return nothing
+end
+
+function reverse_sweep!(system::System, qmc::QMC, walker::GCWalker)
+    """
+    Sweep the walker over the entire space-time lattice in the reverse order
+    """
+    K = qmc.K
+
+    ws = walker.ws
+
+    cluster = walker.cluster
+    tempdata = walker.tempdata
+    tmpR = tempdata.FC.B
+    tmpL = tempdata.Fτ
+    tmpM = tempdata.FM
+
+    for cidx in K : -1 : 1
+        mul!(tmpM[1], tmpR[cidx], tmpL[1], ws)
+        mul!(tmpM[2], tmpR[cidx + K], tmpL[2], ws)
+        update_cluster_reverse!(
+            walker, system, qmc, cidx, tmpM[1], tmpM[2]
+        )
+
+        copyto!(tmpR[cidx], tmpL[1])
+        copyto!(tmpR[cidx + K], tmpL[2])
+
+        rmul!(tmpL[1], cluster.B[cidx], ws)
+        rmul!(tmpL[2], cluster.B[K + cidx], ws)
+    end
+
+    # save the propagation results
+    copyto!.(walker.F, tmpL)
+    # tnen reset Fτ to unit matrix
+    ldr!(tmpL[1], I)
+    ldr!(tmpL[2], I)
+
+    return nothing
+end

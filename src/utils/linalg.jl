@@ -231,3 +231,63 @@ function QR_merge(A::UDR, B::UDR)
     F = UDR(mat)
     UDR(A.U * F.U, F.D, F.R * B.R)
 end
+
+### Additional Functions added for StableLinearAlgebra package ###
+import StableLinearAlgebra as Slinalg
+
+# iteration for destructuring into components
+Base.iterate(S::LDR) = (S.L, Val(:d))
+Base.iterate(S::LDR, ::Val{:d}) = (S.d, Val(:R))
+Base.iterate(S::LDR, ::Val{:R}) = (S.R, Val(:done))
+Base.iterate(S::LDR, ::Val{:done}) = nothing
+
+collectL(S::Vector{LDR{T, E}}) where {T, E} = [S[i].L for i in 1 : length(S)]
+collectd(S::Vector{LDR{T, E}}) where {T, E} = [S[i].d for i in 1 : length(S)]
+collectR(S::Vector{LDR{T, E}}) where {T, E} = [S[i].R for i in 1 : length(S)]
+
+# compute G with an external μ
+function inv_IpμA!(G::AbstractMatrix{T}, A::LDR{T,E}, expβμ::Float64, ws::LDRWorkspace{T,E})::Tuple{E,T} where {T,E}
+
+    Lₐ = A.L
+    dₐ = expβμ * A.d
+    Rₐ = A.R
+
+    # calculate Rₐ⁻¹
+    Rₐ⁻¹ = ws.M′
+    copyto!(Rₐ⁻¹, Rₐ)
+    logdetRₐ⁻¹, sgndetRₐ⁻¹ = Slinalg.inv_lu!(Rₐ⁻¹, ws.lu_ws)
+
+    # calculate D₋ = min(Dₐ, 1)
+    d₋ = ws.v
+    @. d₋ = min(dₐ, 1)
+
+    # calculate Lₐ⋅D₋
+    Slinalg.mul_D!(ws.M, Lₐ, d₋)
+
+    # calculate D₊ = max(Dₐ, 1)
+    d₊ = ws.v
+    @. d₊ = max(dₐ, 1)
+
+    # calculate sign(det(D₊)) and log(|det(D₊)|)
+    logdetD₊, sgndetD₊ = Slinalg.det_D(d₊)
+
+    # calculate Rₐ⁻¹⋅D₊⁻¹
+    Rₐ⁻¹D₊ = Rₐ⁻¹
+    Slinalg.rdiv_D!(Rₐ⁻¹D₊, d₊)
+
+    # calculate M = Rₐ⁻¹⋅D₊⁻¹ + Lₐ⋅D₋
+    @. ws.M += Rₐ⁻¹D₊
+
+    # calculate M⁻¹ = [Rₐ⁻¹⋅D₊⁻¹ + Lₐ⋅D₋]⁻¹
+    M⁻¹ = ws.M
+    logdetM⁻¹, sgndetM⁻¹ = Slinalg.inv_lu!(M⁻¹, ws.lu_ws)
+
+    # calculate G = Rₐ⁻¹⋅D₊⁻¹⋅M⁻¹
+    mul!(G, Rₐ⁻¹D₊, M⁻¹)
+
+    # calculate sign(det(G)) and log(|det(G)|)
+    sgndetG = sgndetRₐ⁻¹ * conj(sgndetD₊) * sgndetM⁻¹
+    logdetG = logdetRₐ⁻¹ - logdetD₊  + logdetM⁻¹
+
+    return real(logdetG), sgndetG
+end
