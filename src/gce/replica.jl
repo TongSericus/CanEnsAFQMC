@@ -2,7 +2,7 @@
     Replica sampling in GCE
 """
 function global_flip!(
-    system::System, walker1::GCWalker, walker2::GCWalker, 
+    system::System, walker1::GeneralGCWalker, walker2::GeneralGCWalker, 
     σ1::AbstractArray, σ2::AbstractArray,
     F1::LDR{T,E}, F2::LDR{T,E}, Bl1::AbstractVector{Tb}, 
     F3::LDR{T,E}, F4::LDR{T,E}, Bl2::AbstractVector{Tb}
@@ -63,7 +63,7 @@ function global_flip!(
 end
 
 function update_cluster!(
-    walker1::GCWalker, walker2::GCWalker, system::System, qmc::QMC, 
+    walker1::GeneralGCWalker, walker2::GeneralGCWalker, system::System, qmc::QMC, 
     cidx::Int64, F1::Vector{LDR{T,E}}, F2::Vector{LDR{T,E}}
 ) where {T<:Number, E<:Real}
     """
@@ -86,11 +86,11 @@ function update_cluster!(
 
     for i in 1 : k
         σ1 = @view walker1.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl1[i], Bl1[k + i], σ1, system)
+        singlestep_matrix!(Bl1[i], Bl1[k + i], σ1, system, tmpmat = walker1.ws.M)
         R1 .*= [inv(Bl1[i]), inv(Bl1[k + i])]
 
         σ2 = @view walker2.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl2[i], Bl2[k + i], σ2, system)
+        singlestep_matrix!(Bl2[i], Bl2[k + i], σ2, system, tmpmat = walker2.ws.M)
         R2 .*= [inv(Bl2[i]), inv(Bl2[k + i])]
 
         global_flip!(
@@ -112,7 +112,7 @@ function update_cluster!(
     return nothing
 end
 
-function sweep!(system::System, qmc::QMC, walker1::GCWalker, walker2::GCWalker)
+function sweep!(system::System, qmc::QMC, walker1::GeneralGCWalker, walker2::GeneralGCWalker)
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -169,7 +169,7 @@ function sweep!(system::System, qmc::QMC, walker1::GCWalker, walker2::GCWalker)
 end
 
 function update_cluster_reverse!(
-    walker1::GCWalker, walker2::GCWalker, system::System, qmc::QMC, 
+    walker1::GeneralGCWalker, walker2::GeneralGCWalker, system::System, qmc::QMC, 
     cidx::Int64, F1::Vector{LDR{T,E}}, F2::Vector{LDR{T,E}}
 ) where {T<:Number, E<:Real, C}
     """
@@ -192,11 +192,11 @@ function update_cluster_reverse!(
 
     for i in k : -1 : 1
         σ1 = @view walker1.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl1[i], Bl1[k + i], σ1, system)
+        singlestep_matrix!(Bl1[i], Bl1[k + i], σ1, system, tmpmat = walker1.ws.M)
         L1 = [inv(Bl1[i]), inv(Bl1[k + i])] .* L1
 
         σ2 = @view walker2.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl2[i], Bl2[k + i], σ2, system)
+        singlestep_matrix!(Bl2[i], Bl2[k + i], σ2, system, tmpmat = walker2.ws.M)
         L2 = [inv(Bl2[i]), inv(Bl2[k + i])] .* L2
 
         global_flip!(
@@ -218,7 +218,7 @@ function update_cluster_reverse!(
     return nothing
 end
 
-function reverse_sweep!(system::System, qmc::QMC, walker1::GCWalker, walker2::GCWalker)
+function reverse_sweep!(system::System, qmc::QMC, walker1::GeneralGCWalker, walker2::GeneralGCWalker)
     """
     Sweep the walker over the entire space-time lattice in the reverse order
     """
@@ -270,7 +270,6 @@ function reverse_sweep!(system::System, qmc::QMC, walker1::GCWalker, walker2::GC
     ldr!(tmpL1[2], I)
     ldr!(tmpL2[1], I)
     ldr!(tmpL2[2], I)
-
 
     return nothing
 end

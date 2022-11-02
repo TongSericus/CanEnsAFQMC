@@ -245,6 +245,11 @@ collectL(S::Vector{LDR{T, E}}) where {T, E} = [S[i].L for i in 1 : length(S)]
 collectd(S::Vector{LDR{T, E}}) where {T, E} = [S[i].d for i in 1 : length(S)]
 collectR(S::Vector{LDR{T, E}}) where {T, E} = [S[i].R for i in 1 : length(S)]
 
+Base.similar(S::LDR{T, E}) where {T, E} = ldr(S)
+
+# Diagonalization
+LinearAlgebra.eigvals(F::LDR{T, E}) where {T, E} = eigvals(Diagonal(F.d) * F.R * F.L, sortby = abs)
+
 # compute G with an external μ
 function inv_IpμA!(G::AbstractMatrix{T}, A::LDR{T,E}, expβμ::Float64, ws::LDRWorkspace{T,E})::Tuple{E,T} where {T,E}
 
@@ -290,4 +295,58 @@ function inv_IpμA!(G::AbstractMatrix{T}, A::LDR{T,E}, expβμ::Float64, ws::LDR
     logdetG = logdetRₐ⁻¹ - logdetD₊  + logdetM⁻¹
 
     return real(logdetG), sgndetG
+end
+
+### Wrapper for some LAPACK functions ###
+const libblastrampoline = "libblastrampoline"
+const liblapack = libblastrampoline
+
+import ..LinearAlgebra.BLAS.@blasfunc
+import ..LinearAlgebra: BlasFloat, BlasInt, LAPACKException,
+    DimensionMismatch, SingularException, PosDefException, chkstride1, checksquare
+
+const chklapackerror = LinearAlgebra.LAPACK.chklapackerror
+
+for (hseqr, elty) in
+    ((:dhseqr_,:Float64),
+     (:shseqr_,:Float32))
+    @eval begin
+        """
+        JOB    
+          JOB is CHARACTER*1
+           = 'E':  compute eigenvalues only;
+           = 'S':  compute eigenvalues and the Schur form T.
+        COMPZ   
+          COMPZ is CHARACTER*1
+           = 'N':  no Schur vectors are computed;
+           = 'I':  Z is initialized to the unit matrix and the matrix Z
+                   of Schur vectors of H is returned;
+           = 'V':  Z must contain an orthogonal matrix Q on entry, and
+                   the product Q*Z is returned.
+        """
+        function hseqr!(job::AbstractChar, compz::AbstractChar, ilo::Int, ihi::Int, H::StridedMatrix{$elty}, Z::StridedMatrix{$elty})
+            N = size(H, 1)
+            ldh = size(H, 1)
+            wr = Vector{$elty}(undef, N)
+            wi = Vector{$elty}(undef, N)
+            ldz = size(Z, 1)
+            work = Vector{$elty}(undef, 1)
+            lwork = BlasInt(-1)
+            info = Ref{BlasInt}()
+            for i = 1:2  # first call returns lwork as work[1]
+                ccall((@blasfunc($hseqr), liblapack), Cvoid,
+                      (Ref{UInt8}, Ref{UInt8}, Ref{BlasInt}, Ref{BlasInt}, Ref{BlasInt},
+                       Ptr{$elty}, Ref{BlasInt}, Ptr{$elty}, Ptr{$elty}, Ptr{$elty}, 
+                       Ref{BlasInt}, Ptr{BlasInt}, Ref{BlasInt}, Ref{BlasInt}),
+                       job, compz, N, ilo, ihi, H, ldh, wr, wi, Z, ldz, work, 
+                       lwork, info) 
+                chklapackerror(info[])
+                if i == 1
+                    lwork = BlasInt(real(work[1]))
+                    resize!(work, lwork)
+                end
+            end
+            return wr, wi, Z
+        end
+    end
 end

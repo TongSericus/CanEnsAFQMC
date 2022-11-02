@@ -35,15 +35,17 @@ mutable struct Hubbard <: System
     L::Int64
     ### Automatically-Generated Constants ###
     auxfield::Matrix{Float64}
+    # second-order Trotterization: exp(-ΔτK/2) * exp(-ΔτV) * exp(-ΔτK/2)
     Bk::Matrix{Float64}
-    BT::Matrix{Float64}
-    BTinv::Matrix{Float64}
+    # first-order Trotterization: exp(-ΔτK) * exp(-ΔτV)
+    useFirstOrderTrotter::Bool
+    Bkf::Matrix{Float64}
 
     function Hubbard(
         Ns::Tuple{Int64, Int64}, N::Tuple{Int64, Int64},
         t::Float64, U::Float64,
         μ::Float64, β::Float64, L::Int64;
-        isReal::Bool = true
+        isReal::Bool = true, useFirstOrderTrotter::Bool = false
     )
         if Ns[2] == 1 
             T = kinetic_matrix_hubbard1D(Ns[1], t)
@@ -63,7 +65,8 @@ mutable struct Hubbard <: System
             Ns, prod(Ns), N, t, U, T, 
             μ, iφ, 
             β, L, auxfield,
-            exp(-T * Δτ/2), exp(-T * Δτ), inv(exp(-T * Δτ))
+            exp(-T * Δτ/2), 
+            useFirstOrderTrotter, exp(-T * Δτ)
         )
     end
 end

@@ -50,32 +50,56 @@ function kinetic_matrix_hubbard2D(NsX::Int64, NsY::Int64, t::Float64)
 end
 
 function auxfield_matrix_hubbard(σ::AbstractArray{Int64}, auxfield::Matrix{Float64})
-    plusfield = isone.(σ)
-    minusfield = isone.(-σ)
+    """
+    Hubbard HS field matrix generator
+    """
+    pfield = isone.(σ)
+    mfield = isone.(-σ)
     
-    afmat_up = plusfield * auxfield[1,1] .+ 
-        minusfield * auxfield[2,1]
-    afmat_dn = plusfield * auxfield[1,2] .+ 
-        minusfield * auxfield[2,2]
+    afmat_up = pfield * auxfield[1,1] .+ mfield * auxfield[2,1]
+    afmat_dn = pfield * auxfield[1,2] .+ mfield * auxfield[2,2]
 
     return afmat_up, afmat_dn
 end
 
-function singlestep_matrix(σ::AbstractArray{Int64}, system::System)
+function singlestep_matrix(
+    σ::AbstractArray{Int64}, system::Hubbard;
+    useFirstOrderTrotter::Bool = system.useFirstOrderTrotter
+)
     """
-    Compute B = Bk/2 * Bv * Bk/2
+    Compute B = exp(-ΔτK/2) * exp(-ΔτV(σ)) * exp(-ΔτK/2)
     """
-    afmat = auxfield_matrix_hubbard(σ, system.auxfield)
-    B = [system.Bk * Diagonal(afmat[1]) * system.Bk, system.Bk * Diagonal(afmat[2]) * system.Bk]
+    afmat_up, afmat_dn = auxfield_matrix_hubbard(σ, system.auxfield)
+
+    if useFirstOrderTrotter
+        B = [system.Bkf * Diagonal(afmat_up), system.Bkf * Diagonal(afmat_dn)]
+    else
+        B = [system.Bk * Diagonal(afmat_up) * system.Bk, system.Bk * Diagonal(afmat_dn) * system.Bk]
+    end
+    
+    return B
 end
 
 function singlestep_matrix!(
-    B1::AbstractMatrix{T}, B2::AbstractMatrix{T}, σ::AbstractArray{Int64}, system::System
+    Bup::AbstractMatrix{T}, Bdn::AbstractMatrix{T}, σ::AbstractArray{Int64}, system::Hubbard;
+    useFirstOrderTrotter::Bool = system.useFirstOrderTrotter,
+    tmpmat = similar(Bup)
 ) where {T<:FloatType}
     """
-    Compute B = Bk/2 * Bv * Bk/2
+    Compute B = exp(-ΔτK/2) * exp(-ΔτV(σ)) * exp(-ΔτK/2) in-place
     """
-    afmat = auxfield_matrix_hubbard(σ, system.auxfield)
-    mul!(B1, system.Bk, Diagonal(afmat[1]) * system.Bk)
-    mul!(B2, system.Bk, Diagonal(afmat[2]) * system.Bk)
+    afmat_up, afmat_dn = auxfield_matrix_hubbard(σ, system.auxfield)
+
+    if useFirstOrderTrotter
+        mul!(Bup, system.Bkf, Diagonal(afmat_up))
+        mul!(Bdn, system.Bkf, Diagonal(afmat_dn))
+    else
+        mul!(tmpmat, Diagonal(afmat_up), system.Bk)
+        mul!(Bup, system.Bk, tmpmat)
+        
+        mul!(tmpmat, Diagonal(afmat_dn), system.Bk)
+        mul!(Bdn, system.Bk, tmpmat)
+    end
+
+    return nothing
 end

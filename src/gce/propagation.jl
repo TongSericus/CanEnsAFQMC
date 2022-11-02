@@ -1,154 +1,117 @@
-convert_auxidx(σ::Int64) = Int64((σ + 1) / 2 + 1)
+"""
+    Monte Carlo Propagation in the GC
+"""
+
+flip_HSField(σ::Int) = Int64((σ + 1) / 2 + 1)
+
+function update_G!(G::AbstractMatrix{T}, α::Float64, d::Float64, sidx::Int64) where T
+    """
+    Fast update the Green's function
+    """
+    ImG = I - G
+    @views dG = α / d * ImG[:, sidx] * (G[sidx, :])'
+    G .-= dG
+end
+
+function wrap_G!(G::AbstractMatrix{T}, B::AbstractMatrix{T}, ws::LDRWorkspace{T, E}) where {T, E}
+    """
+    Compute G' = B * G * B⁻¹
+    """
+    mul!(ws.M, B, G)
+    # B⁻¹ calculation could be further optimized
+    mul!(G, ws.M, inv(B))
+end
 
 function update_cluster!(
-    walker::GCEWalker{T, C}, 
+    walker::HubbardGCWalker, 
     system::System, qmc::QMC, cidx::Int64
-) where {T<:FloatType, C}
-    k = qmc.stab_interval
-    Bl = Cluster(system.V, 2 * k)
+)
+    k = qmc.K_interval[cidx]
+    K = qmc.K
+    
+
+    Bl = walker.tempdata.cluster.B
+    cluster = walker.cluster
     G = walker.G
     α = walker.α
 
     for i in 1 : k
         l = (cidx - 1) * k + i
-        @views σ = convert_auxidx.(walker.auxfield[:, l])
+        @views σ = flip_HSField.(walker.auxfield[:, l])
         for j in 1 : system.V
-            # ratio of determinants
+            # compute ratios of determinants through G
             d_up = 1 + α[1, σ[j]] * (1 - G[1][j, j])
             d_dn = 1 + α[2, σ[j]] * (1 - G[2][j, j])
 
             r = abs(d_up * d_dn)
-            p = r / (1 + r)
 
-            if rand() < p
+            if rand() < r
                 walker.auxfield[j, l] *= -1
-                G[1] = updateG(G[1], α[1, σ[j]], d_up, j)
-                G[2] = updateG(G[2], α[2, σ[j]], d_dn, j)
+                update_G!(G[1], α[1, σ[j]], d_up, j)
+                update_G!(G[2], α[2, σ[j]], d_dn, j)
             end
         end
-        Bl.B[i], Bl.B[k + i] = singlestep_matrix(walker.auxfield[:, l], system)
+        @views σ = walker.auxfield[:, l]
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
 
-        # wrap the Green's function
-        B = (system.Bk) * Bl.B[i] * inv(system.Bk)
-        G[1] = B * G[1] * inv(B)
-        B = (system.Bk) * Bl.B[k + i] * inv(system.Bk)
-        G[2] = B * G[2] * inv(B)
-    end
-    walker.cluster.B[cidx] = prod(Bl, k : -1 : 1)
-    walker.cluster.B[qmc.K + cidx] = prod(Bl, 2*k : -1 : k+1)
-
-    # wrap is not stable and G needs to be periodically recomputed
-    recomputeG(system, qmc, walker, cidx)
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker::GCEWalker{T, C}
-) where {T<:FloatType, C}
-    for cidx in 1 : qmc.K
-        walker = update_cluster!(walker, system, qmc, cidx)
+        # rank-1 update of the Green's function
+        wrap_G!(G[1], Bl[i], walker.ws)
+        wrap_G!(G[2], Bl[k + i], walker.ws)
     end
 
-    return walker
+    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
+    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
+
+    return nothing
 end
 
-### Replica Sampling ###
-function update_cluster!(
-    walker1::GCEWalker{T1, C}, walker2::GCEWalker{T2, C},
-    system::System, qmc::QMC, cidx::Int64
-) where {T1<:FloatType, T2<:FloatType, C}
+function sweep!(system::System, qmc::QMC, walker::HubbardGCWalker)
     """
-        Update the whole cluster for two copies of walker
+    Sweep the walker over the entire space-time lattice
     """
-    k = qmc.stab_interval
+    K = qmc.K
 
-    Bl1 = Cluster(system.V, 2 * k)
-    G1 = walker1.G
-    α1 = walker1.α
+    ws = walker.ws
+    weight = walker.weight
+    sgn = walker.sign
+    
+    G = walker.G
+    cluster = walker.cluster
+    tempdata = walker.tempdata
+    tmpL = tempdata.FC.B
+    tmpR = tempdata.Fτ
+    tmpM = tempdata.FM
 
-    Bl2 = Cluster(system.V, 2 * k)
-    G2 = walker2.G
-    α2 = walker2.α
+    for cidx in 1 : K
+        update_cluster!(walker, system, qmc, cidx)
 
-    for i in 1 : k
-        l = (cidx - 1) * k + i
-        @views σ1 = convert_auxidx.(walker1.auxfield[:, l])
-        @views σ2 = convert_auxidx.(walker2.auxfield[:, l])
-        for j in 1 : system.V
-            # ratio of determinants
-            d1_up = 1 + α1[1, σ1[j]] * (1 - G1[1][j, j])
-            d1_dn = 1 + α1[2, σ1[j]] * (1 - G1[2][j, j])
-            r1 = abs(d1_up * d1_dn)
-            
-            d2_up = 1 + α2[1, σ2[j]] * (1 - G2[1][j, j])
-            d2_dn = 1 + α2[2, σ2[j]] * (1 - G2[2][j, j])
-            r2 = abs(d2_up * d2_dn)
+        lmul!(cluster.B[cidx], tmpR[1], ws)
+        lmul!(cluster.B[K + cidx], tmpR[2], ws)
 
-            idx = heatbath_sampling([1, r1, r2, r1 * r2])
-            
-            if idx == 2
-                # accept trial 1 but reject trial 2
-                walker1.auxfield[j, l] *= -1
-                G1[1] = updateG(G1[1], α1[1, σ1[j]], d1_up, j)
-                G1[2] = updateG(G1[2], α1[2, σ1[j]], d1_dn, j)
-            elseif idx == 3
-                # reject trial 1 but accept trial 1
-                walker2.auxfield[j, l] *= -1
-                G2[1] = updateG(G2[1], α2[1, σ2[j]], d2_up, j)
-                G2[2] = updateG(G2[2], α2[2, σ2[j]], d2_dn, j)
-            elseif idx == 4
-                # accept both trials
-                walker1.auxfield[j, l] *= -1
-                G1[1] = updateG(G1[1], α1[1, σ1[j]], d1_up, j)
-                G1[2] = updateG(G1[2], α1[2, σ1[j]], d1_dn, j)
+        mul!(tmpM[1], tmpR[1], tmpL[cidx], ws)
+        mul!(tmpM[2], tmpR[2], tmpL[K + cidx], ws)
 
-                walker2.auxfield[j, l] *= -1
-                G2[1] = updateG(G2[1], α2[1, σ2[j]], d2_up, j)
-                G2[2] = updateG(G2[2], α2[2, σ2[j]], d2_dn, j)
-            end
-        end
-        Bl1.B[i], Bl1.B[k + i] = singlestep_matrix(walker1.auxfield[:, l], system)
-        Bl2.B[i], Bl2.B[k + i] = singlestep_matrix(walker2.auxfield[:, l], system)
-
-        # wrap the Green's function
-        B = (system.Bk) * Bl1.B[i] * inv(system.Bk)
-        G1[1] = B * G1[1] * inv(B)
-        B = (system.Bk) * Bl1.B[k + i] * inv(system.Bk)
-        G1[2] = B * G1[2] * inv(B)
-
-        B = (system.Bk) * Bl2.B[i] * inv(system.Bk)
-        G2[1] = B * G2[1] * inv(B)
-        B = (system.Bk) * Bl2.B[k + i] * inv(system.Bk)
-        G2[2] = B * G2[2] * inv(B)
-    end
-    walker1.cluster.B[cidx] = prod(Bl1, k : -1 : 1)
-    walker1.cluster.B[qmc.K + cidx] = prod(Bl1, 2*k : -1 : k+1)
-
-    walker2.cluster.B[cidx] = prod(Bl2, k : -1 : 1)
-    walker2.cluster.B[qmc.K + cidx] = prod(Bl2, 2*k : -1 : k+1)
-
-    # wrap is not stable and G needs to be periodically recomputed
-    walker1 = recomputeG(system, qmc, walker1, cidx)
-    walker2 = recomputeG(system, qmc, walker2, cidx)
-
-    return walker1, walker2
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker1::GCEWalker{T1, C}, walker2::GCEWalker{T2, C}
-) where {T1<:FloatType, T2<:FloatType, C}
-    for cidx in 1 : qmc.K
-        walker1, walker2 = update_cluster!(walker1, walker2, system, qmc, cidx)
+        
+        # G needs to be periodically recomputed
+        weight[1], sgn[1] = inv_IpμA!(G[1], tmpM[1], walker.expβμ[], ws)
+        weight[2], sgn[2] = inv_IpμA!(G[2], tmpM[2], walker.expβμ[], ws)
+        weight .*= -1
     end
 
-    return walker1, walker2
+    # At the end of the simulation, recompute all partial factorizations
+    run_full_propagation_reverse(walker.auxfield, system, qmc, ws, FC = walker.tempdata.FC)
+
+    # reset Fτs to unit matrices
+    ldr!(tmpR[1], I)
+    ldr!(tmpR[2], I)
+
+    return nothing
 end
 
-### A New Scheme using StableLinearAlgebra Package ###
+### General GC Sweep, No Rank-1 Update Scheme ###
 function calc_trial(
-    σ::AbstractArray{Int64}, system::System, walker::GCWalker, F1::LDR{T,E}, F2::LDR{T,E}
-) where {T<:Number, E<:Real, C}
+    σ::AbstractArray{Int64}, system::System, walker::GeneralGCWalker, F1::LDR{T,E}, F2::LDR{T,E}
+) where {T<:Number, E<:Real}
     """
     Compute the weight of a trial configuration using a potential repartition scheme
     """
@@ -173,11 +136,41 @@ function calc_trial(
     return -weight, sign, Btmp
 end
 
-function global_flip!(
-    system::System, walker::GCWalker, σ::AbstractArray,
+function local_flip!(
+    system::System, walker::GeneralGCWalker, σ::AbstractArray,
     F1::LDR{T,E}, Bl1::AbstractMatrix{Tm}, 
     F2::LDR{T,E}, Bl2::AbstractMatrix{Tm}
-) where {Tm<:Number, T<:Number, E<:Real, C}
+) where {Tm<:Number, T<:Number, E<:Real}
+    """
+    Select a fraction of sites and flip their spins
+    """
+    weight_old = walker.weight
+
+    for i in 1 : system.V
+        σ[i] *= -1
+        weight_new, sign_new, Bltmp = calc_trial(σ, system, walker, F1, F2)
+
+        # accept ratio
+        r = exp(sum(weight_new) - sum(weight_old))
+        if rand() < min(1, r)
+            weight_old .= weight_new
+            walker.sign .= sign_new
+
+            copyto!(Bl1, Bltmp[1])
+            copyto!(Bl2, Bltmp[2])
+        else
+            σ[i] *= -1
+        end
+    end
+
+    return nothing
+end
+
+function global_flip!(
+    system::System, walker::GeneralGCWalker, σ::AbstractArray,
+    F1::LDR{T,E}, Bl1::AbstractMatrix{Tm}, 
+    F2::LDR{T,E}, Bl2::AbstractMatrix{Tm}
+) where {Tm<:Number, T<:Number, E<:Real}
     """
     Select a fraction of sites and flip their spins
     """
@@ -188,7 +181,7 @@ function global_flip!(
     weight_new, sign_new, Bltmp = calc_trial(σ, system, walker, F1, F2)
 
     # accept ratio
-    r = abs(exp(sum(weight_new) - sum(weight_old)))
+    r = exp(sum(weight_new) - sum(weight_old))
     if rand() < min(1, r)
         weight_old .= weight_new
         walker.sign .= sign_new
@@ -203,7 +196,7 @@ function global_flip!(
 end
 
 function update_cluster!(
-    walker::GCWalker, system::System, qmc::QMC, 
+    walker::GeneralGCWalker, system::System, qmc::QMC, 
     cidx::Int64, F1::LDR{T,E}, F2::LDR{T,E}
 ) where {T<:Number, E<:Real}
     """
@@ -221,11 +214,11 @@ function update_cluster!(
 
     for i in 1 : k
         σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
         R1 *= inv(Bl[i])
         R2 *= inv(Bl[k + i])
 
-        global_flip!(
+        local_flip!(
             system, walker, σ,
             LDR(L1, d1, R1), Bl[i],
             LDR(L2, d2, R2), Bl[k + i]
@@ -241,7 +234,7 @@ function update_cluster!(
     return nothing
 end
 
-function sweep!(system::System, qmc::QMC, walker::GCWalker)
+function sweep!(system::System, qmc::QMC, walker::GeneralGCWalker)
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -269,6 +262,9 @@ function sweep!(system::System, qmc::QMC, walker::GCWalker)
         lmul!(cluster.B[K + cidx], tmpR[2], ws)
     end
 
+    # compute Green's function after sweep
+    inv_IpμA!(walker.G[1], tmpR[1], walker.expβμ[], walker.ws)
+    inv_IpμA!(walker.G[2], tmpR[2], walker.expβμ[], walker.ws)
     # save the propagation results
     copyto!.(walker.F, tmpR)
     # then reset Fτ to unit matrix
@@ -279,9 +275,9 @@ function sweep!(system::System, qmc::QMC, walker::GCWalker)
 end
 
 function update_cluster_reverse!(
-    walker::GCWalker, system::System, qmc::QMC, 
+    walker::GeneralGCWalker, system::System, qmc::QMC, 
     cidx::Int64, F1::LDR{T,E}, F2::LDR{T,E}
-) where {T<:Number, E<:Real, C}
+) where {T<:Number, E<:Real}
     """
     Update the propagation matrices of size equaling to the stablization interval
     """
@@ -298,11 +294,11 @@ function update_cluster_reverse!(
 
     for i in k : -1 : 1
         σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system)
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
         L1 = inv(Bl[i]) * L1
         L2 = inv(Bl[k + i]) * L2
 
-        global_flip!(
+        local_flip!(
             system, walker, σ,
             LDR(L1, d1, R1), Bl[i],
             LDR(L2, d2, R2), Bl[k + i]
@@ -318,7 +314,7 @@ function update_cluster_reverse!(
     return nothing
 end
 
-function reverse_sweep!(system::System, qmc::QMC, walker::GCWalker)
+function reverse_sweep!(system::System, qmc::QMC, walker::GeneralGCWalker)
     """
     Sweep the walker over the entire space-time lattice in the reverse order
     """
@@ -346,6 +342,9 @@ function reverse_sweep!(system::System, qmc::QMC, walker::GCWalker)
         rmul!(tmpL[2], cluster.B[K + cidx], ws)
     end
 
+    # compute Green's function after sweep
+    inv_IpμA!(walker.G[1], tmpL[1], walker.expβμ[], walker.ws)
+    inv_IpμA!(walker.G[2], tmpL[2], walker.expβμ[], walker.ws)
     # save the propagation results
     copyto!.(walker.F, tmpL)
     # tnen reset Fτ to unit matrix

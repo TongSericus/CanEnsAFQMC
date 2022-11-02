@@ -41,7 +41,7 @@ function pf_projection_stable(
     returnFull::Bool = false,
     iφ = im * [2 * π * m / Ns for m = 1 : Ns],
     expiφ = exp.(iφ)
-) where {T<:FloatType}
+) where {T<:Number}
     expβμ = fermilevel(expβϵ, N)
     expiφβμ = expiφ / expβμ
 
@@ -54,17 +54,24 @@ function pf_projection_stable(
     logZ = log(Z) + logZm_max - log(Ns)
 
     returnFull || return logZ
-    return expβμ, η, logZ
+    return expβμ, expiφβμ, η, logZ
 end
 
 function occ_projection_stable(
     Ns::Int64, N::Int64, expβϵ::Vector{T};
     iφ = im * [2 * π * m / Ns for m = 1 : Ns],
     expiφ = exp.(iφ)
-) where {T<:FloatType}
-    expβμ, η, Z = pf_projection_stable(Ns, N, expβϵ, returnFull=true, iφ=iφ, expiφ=expiφ)
-    ñ = [expiφ[m] / expβμ * expβϵ[i] / (1 + expiφ[m] / expβμ * expβϵ[i]) for m = 1 : Ns, i = 1 : Ns]
-    n = [sum((conj(expiφ) * expβμ).^N .* ñ[:, i] .* η) / Ns / Z for i = 1 : Ns]
+) where {T<:Number}
+    expβμ, expiφβμ, η, logZ = pf_projection_stable(Ns, N, expβϵ, returnFull=true, iφ=iφ, expiφ=expiφ)
+
+    n = zeros(ComplexF64, Ns)
+    for i in 1 : Ns
+        ñk = expiφβμ * expβϵ[i] ./ (1 .+ expiφβμ * expβϵ[i])
+        logñ = -iφ * N .+ log.(ñk) .+ η
+        logn = logñ .+ log(expβμ) * N .- logZ
+        n[i] = sum(exp.(logn)) / Ns
+    end
+
     return n
 end
 

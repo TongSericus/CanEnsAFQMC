@@ -18,9 +18,20 @@ function pf_recursion(
     """
     isReal || (expβϵ = complex(expβϵ))
 
-    N == 0 && return convert(T, 0.0)
-    N == 1 && return log(sum(expβϵ))
-    N == Ns && return sum(log.(expβϵ))
+    N == 0 && return convert(T, 0.0), 1.0
+    if N == 1 
+        logZ = log(sum(expβϵ))
+        abslogZ = real(logZ)
+        sgnlogZ = exp(imag(logZ)im)
+
+        return abslogZ, sgnlogZ
+    elseif N == Ns
+        logZ = sum(log.(expβϵ))
+        abslogZ = real(logZ)
+        sgnlogZ = exp(imag(logZ)im)
+
+        return abslogZ, sgnlogZ
+    end
     
     # rescale spectrum
     expβμ = fermilevel(expβϵ, N)
@@ -39,7 +50,10 @@ function pf_recursion(
         logZ = log(P[N+1, Ns]) - logP0 + N*log(expβμ)
     end
 
-    return logZ
+    abslogZ = real(logZ)
+    sgnlogZ = exp(imag(logZ)im)
+
+    return abslogZ, sgnlogZ
 end
 
 function occ_recursion(
@@ -106,9 +120,9 @@ function occ_recursion_rescaled(
 end
 
 function second_order_corr(
-    expβϵ::Array{T,1}, ni::Array{T,1};
-    Ns = length(expβϵ), ninj = zeros(T, Ns, Ns)
-) where {T<:Number}
+    expβϵ::Array{T,1}, ni::Array{Tn,1};
+    Ns = length(expβϵ), ninj = zeros(Tn, Ns, Ns)
+) where {T<:Number, Tn<:Number}
     """
     Generate second-order correlation matrix, i.e., ⟨n_{i} n_{j}⟩ using the formula:
     ⟨n_{i} n_{j}⟩ = (n_{i}/expβϵ_{i} - n_{j}/expβϵ_{j}) / (1/expβϵ_{i} - 1/expβϵ_{j}).

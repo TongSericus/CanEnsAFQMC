@@ -43,14 +43,21 @@ function DensityMatrices(system::System)
     )
 end
 
-function fill_DM!(DM::DensityMatrices{T}, F::UDTlr, N::Int64; isReal::Bool=true, computeTwoBody::Bool=true) where {T<:Number}
+function fill_DM!(
+    DM::DensityMatrices{T, Tn, Tp}, F::UDTlr, N::Int64; 
+    isReal::Bool=true, computeTwoBody::Bool=true
+) where {T<:Number, Tn, Tp}
     """
     Compute the elements of one-/two-body density matrices
     """
     # One-body elements
-    λ, Pocc, invPocc = eigen(F)
+    mat = Diagonal(F.D) * F.T * F.U
+    λ, P = eigen!(mat, sortby=abs)
+    P = F.U * P
+    invP = inv(P)
+
     ni = occ_recursion(λ, N)
-    mul!(DM.tmp.D, Pocc, Diagonal(ni) * invPocc)
+    mul!(DM.tmp.D, P, Diagonal(ni) * invP)
 
     isReal ? copyto!(DM.Do, real(DM.tmp.D)) : copyto!(DM.Do, DM.tmp.D)
 
@@ -58,15 +65,15 @@ function fill_DM!(DM::DensityMatrices{T}, F::UDTlr, N::Int64; isReal::Bool=true,
 
     # Two-body elements
     second_order_corr(λ, ni, ninj = DM.tmp.ninj)
-    compute_P(Pocc, invPocc, P1 = DM.tmp.P1, P2 = DM.tmp.P2)
+    compute_P(P, invP, P1 = DM.tmp.P1, P2 = DM.tmp.P2)
     fill_Dt!(
         ni, DM.tmp.ninj, 
-        Pocc, invPocc, 
+        P, invP, 
         Dt = DM.tmp.D, 
         P1 = DM.tmp.P1, P2 = DM.tmp.P2
     )
 
-    system.isReal ? copyto!(DM.Dt, real(DM.tmp.D)) : copyto!(DM.Dt, DM.tmp.D)
+    isReal ? copyto!(DM.Dt, real(DM.tmp.D)) : copyto!(DM.Dt, DM.tmp.D)
     
     return DM
 end
@@ -95,12 +102,12 @@ function compute_P(
 end
 
 function fill_Dt!(
-    ni::AbstractVector{T}, ninj::AbstractMatrix{T}, 
-    P::AbstractMatrix{T}, invP::AbstractMatrix{T};
-    L = size(P), Dt = zeros(T, L[1], L[1]),
-    P1 = zeros(T, L[2], L[2], L[1], L[1]),
-    P2 = zeros(T, L[2], L[2], L[1], L[1])
-) where {T<:Number}
+    ni::AbstractVector{Tn}, ninj::AbstractMatrix{Tn}, 
+    P::AbstractMatrix{Tp}, invP::AbstractMatrix{Tp};
+    L = size(P), Dt = zeros(Tn, L[1], L[1]),
+    P1 = zeros(Tp, L[2], L[2], L[1], L[1]),
+    P2 = zeros(Tp, L[2], L[2], L[1], L[1])
+) where {Tn<:Number, Tp<:Number}
     """
     Compute the elements of the two-body density matrix
     """
@@ -122,4 +129,25 @@ function fill_Dt!(
     end
 
     return Dt
+end
+
+### GCE Density Matrices ###
+function fill_DM!(DM::DensityMatrices{T, Tn, Tp}, G::AbstractMatrix{T}) where {T<:Number, Tn, Tp}
+    Ns = size(G)[1]
+
+    # One-body
+    copyto!(DM.Do, I - adjoint(G))
+
+    # Two-body, Wick's theorem
+    # <a_i^+ a_j a_k^+ a_l> = <a_i^+ a_j><a_k^+ a_l> + <a_i^+ a_l>(δ_{kj} - <a_k^+ a_j>)
+    Do = DM.Do
+    Dt = DM.Dt
+    @inbounds for j in 1 : Ns
+        for i in j : Ns
+            Dt[i, j] = Do[i, i] * Do[j, j] + Do[i, j] * ((i == j) - Do[j, i])
+            Dt[j, i] = Dt[i, j]
+        end
+    end
+
+    return DM
 end

@@ -79,6 +79,50 @@ function run_full_propagation(MP::Cluster{T}, system::System, qmc::QMC; K = qmc.
     return F
 end
 
+### A New Scheme using StableLinearAlgebra Package ###
+function run_full_propagation(
+    auxfield::AbstractMatrix{Int64}, system::System, qmc::QMC, ws::LDRWorkspace{T, E}; 
+    K = qmc.K, stab_interval = qmc.stab_interval, K_interval = qmc.K_interval
+) where {T, E}
+    Ns = system.V
+    N = system.N
+    ϵ = qmc.lrThld
+
+    B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
+    MP = Cluster(Ns, 2 * K)
+
+    F = ldrs(B[1], 2)
+    if qmc.isLowrank
+        F = [UDTlr(F[1], N[1], ϵ), UDTlr(F[2], N[2], ϵ)]
+        FC = FC = Cluster(F[1], 2 * K)
+    else
+        FC = Cluster(B = ldrs(B[1], 2 * K))
+    end
+
+    for i in 1 : K
+
+        for j = 1 : K_interval[i]
+            @views σ = auxfield[:, (i - 1) * stab_interval + j]
+            singlestep_matrix!(B[1], B[2], σ, system, tmpmat = ws.M)
+            MP.B[i] = B[1] * MP.B[i]            # spin-up
+            MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
+        end
+
+        copyto!(FC.B[i], F[1])
+        copyto!(FC.B[K + i], F[2])
+
+        if qmc.isLowrank
+            lmul!(MP.B[i], F[1], N[1], ϵ, ws)
+            lmul!(MP.B[K + i], F[2], N[2], ϵ, ws)
+        else
+            lmul!(MP.B[i], F[1], ws)
+            lmul!(MP.B[K + i], F[2], ws)
+        end
+    end
+
+    return F, MP, FC
+end
+
 """
     Repartition scheme
 """

@@ -64,3 +64,18 @@ function reblock(x::Vector{T}) where {T <: FloatType}
     return mean(xblocked), std(xblocked) / sqrt(nblocks)
 
 end
+
+
+function reblock(x::Vector{T}, block_size::Int64) where {T<:Number}
+    """
+    Compute the reblocked sample averages and error bars
+    """
+    nblocks = div(length(x), block_size)
+    xblocked = Vector{T}()
+    for i = 1 : nblocks
+        offset = (i - 1) * block_size + 1
+        push!(xblocked, mean(x[offset : offset + block_size - 1]))
+    end
+
+    return mean(xblocked), std(xblocked) / sqrt(nblocks)
+end

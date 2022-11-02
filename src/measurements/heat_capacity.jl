@@ -2,7 +2,6 @@
     A correlated sampling scheme to compute energy difference
     using the method introduced in doi.org/10.1103/PhysRevLett.87.022501
 """
-
 function measure_HeatCapacity_denom(
     system_pβ::System, system_mβ::System, qmc::QMC, walker::Walker;
     Z_pmβ::AbstractVector = zeros(Float64, 2),
@@ -12,10 +11,10 @@ function measure_HeatCapacity_denom(
     N = system_pβ.N
 
     F_pβ, dummy1, dummy2 = run_full_propagation(walker.auxfield, system_pβ, qmc)
-    weight_pβ = calc_pf(F_pβ[1], N[1]) + calc_pf(F_pβ[2], N[2])
+    weight_pβ = compute_PF(F_pβ[1], N[1]) + compute_PF(F_pβ[2], N[2])
 
     F_mβ, dummy1, dummy2 = run_full_propagation(walker.auxfield, system_mβ, qmc)
-    weight_mβ = calc_pf(F_mβ[1], N[1]) + calc_pf(F_mβ[2], N[2])
+    weight_mβ = compute_PF(F_mβ[1], N[1]) + compute_PF(F_mβ[2], N[2])
 
     # compute the denominator Z(β ± δβ)
     Z_pβ = weight_pβ - sum(walker.weight)

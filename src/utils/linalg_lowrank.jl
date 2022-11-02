@@ -1,7 +1,7 @@
 """
     Matrix Operations with truncations
 """
-struct UDTlr{T} <: Factorization{T}
+struct UDTlr{T<:Number} <: Factorization{T}
     U::AbstractMatrix{T}
     D::AbstractVector{T}
     T::AbstractMatrix{T}
@@ -15,7 +15,13 @@ Base.iterate(S::UDTlr, ::Val{:D}) = @views (S.D[S.t[]], Val(:T))
 Base.iterate(S::UDTlr, ::Val{:T}) = @views (S.T[S.t[], :], Val(:done))
 Base.iterate(S::UDTlr, ::Val{:done}) = nothing
 
-Base.similar(S::UDTlr) = UDTlr(similar(S.U), similar(S.D), similar(S.T), Ref(S.t[]))
+Base.similar(S::UDTlr) = let
+    F = UDTlr(similar(S.U), similar(S.D), similar(S.T), Ref(S.t[]))
+    copyto!(F.U, I)
+    fill!(F.D, 1.0)
+    copyto!(F.T, I)
+    F
+end
 
 collectU(S::Vector{UDTlr{Ts}}) where Ts = [S[i].U for i in 1 : length(S)]
 collectD(S::Vector{UDTlr{Ts}}) where Ts = [S[i].D for i in 1 : length(S)]
@@ -129,4 +135,41 @@ function QR_merge!(
     C.t[] = F.t[]
 
     return C
+end
+
+### Additional Functions Added for StableLinearAlgebra Package ###
+import LinearAlgebra: lmul!, rmul!, mul!
+
+function UDTlr(F::LDR{T,E}, N::Int, ϵ::Float64) where {T,E}
+    t = lowrank_truncation(F.d, N, ϵ)
+    UDTlr(F.L, F.d, F.R, Ref(t))
+end
+
+function lmul!(A::AbstractMatrix{T}, F::UDTlr{T}, N::Int, ϵ::Float64, ws::LDRWorkspace{T,E}) where {T, E}
+    M = LDR(F.U, F.D, F.T)
+    lmul!(A, M, ws)
+    F.t[] = lowrank_truncation(F.D, N, ϵ)
+
+    return nothing
+end
+
+function rmul!(F::UDTlr{T}, A::AbstractMatrix{T}, N::Int, ϵ::Float64, ws::LDRWorkspace{T,E}) where {T, E}
+    M = LDR(F.U, F.D, F.T)
+    rmul!(M, A, ws)
+    F.t[] = lowrank_truncation(F.D, N, ϵ)
+
+    return nothing
+end
+
+function mul!(C::UDTlr{T}, A::UDTlr{T}, B::UDTlr{T}, N::Int, ϵ::Float64, ws::LDRWorkspace{T,E}) where {T, E}
+    """
+    Compute the factorization of A * B, writing the results into preallocated C
+    """
+    M = LDR(C.U, C.D, C.T)
+    L = LDR(A.U, A.D, A.T)
+    R = LDR(B.U, B.D, B.T)
+    mul!(M, L, R, ws)
+    C.t[] = lowrank_truncation(C.D, N, ϵ)
+
+    return nothing
 end
