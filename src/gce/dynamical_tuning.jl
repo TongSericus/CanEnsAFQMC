@@ -3,7 +3,7 @@
     described in doi/10.1103/PhysRevE.105.045311
 """
 
-Base.@kwdef struct MuTuner{T<:FloatType}
+Base.@kwdef struct MuTuner{T<:Number}
     μ::Float64
     μt::Vector{Float64}
     sgn::Vector{T} = []

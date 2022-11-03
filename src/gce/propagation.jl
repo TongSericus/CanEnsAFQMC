@@ -1,12 +1,11 @@
 """
     Monte Carlo Propagation in the GC
 """
-
-flip_HSField(σ::Int) = Int64((σ + 1) / 2 + 1)
-
-function update_G!(G::AbstractMatrix{T}, α::Float64, d::Float64, sidx::Int64) where T
+function update_G!(G::AbstractMatrix{T}, α::Float64, d::Float64, sidx::Int64) where {T, E}
     """
-    Fast update the Green's function
+    Fast update the Green's function at the ith site:
+    G ← G - α_{i, σ} / d_{i, i} * u * wᵀ
+    where u = (I - G)e₁, w = Gᵀe₁
     """
     ImG = I - G
     @views dG = α / d * ImG[:, sidx] * (G[sidx, :])'
@@ -18,18 +17,24 @@ function wrap_G!(G::AbstractMatrix{T}, B::AbstractMatrix{T}, ws::LDRWorkspace{T,
     Compute G' = B * G * B⁻¹
     """
     mul!(ws.M, B, G)
-    # B⁻¹ calculation could be further optimized
-    mul!(G, ws.M, inv(B))
+    
+    B⁻¹ = ws.M′
+    copyto!(B⁻¹, B)
+    inv_lu!(B⁻¹, ws.lu_ws)
+    mul!(G, ws.M, B⁻¹)
 end
+
+flip_HSField(σ::Int) = Int64((σ + 1) / 2 + 1)
 
 function update_cluster!(
     walker::HubbardGCWalker, 
-    system::System, qmc::QMC, cidx::Int64
+    system::Hubbard, qmc::QMC, cidx::Int64
 )
     k = qmc.K_interval[cidx]
     K = qmc.K
-    
 
+    ws = walker.ws
+    
     Bl = walker.tempdata.cluster.B
     cluster = walker.cluster
     G = walker.G
@@ -46,17 +51,18 @@ function update_cluster!(
             r = abs(d_up * d_dn)
 
             if rand() < r
+                # accept the move, update the field and the Green's
                 walker.auxfield[j, l] *= -1
                 update_G!(G[1], α[1, σ[j]], d_up, j)
                 update_G!(G[2], α[2, σ[j]], d_dn, j)
             end
         end
         @views σ = walker.auxfield[:, l]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
+        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = ws.M)
 
         # rank-1 update of the Green's function
-        wrap_G!(G[1], Bl[i], walker.ws)
-        wrap_G!(G[2], Bl[k + i], walker.ws)
+        wrap_G!(G[1], Bl[i], ws)
+        wrap_G!(G[2], Bl[k + i], ws)
     end
 
     @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
@@ -65,7 +71,7 @@ function update_cluster!(
     return nothing
 end
 
-function sweep!(system::System, qmc::QMC, walker::HubbardGCWalker)
+function sweep!(system::Hubbard, qmc::QMC, walker::HubbardGCWalker)
     """
     Sweep the walker over the entire space-time lattice
     """
@@ -85,14 +91,17 @@ function sweep!(system::System, qmc::QMC, walker::HubbardGCWalker)
     for cidx in 1 : K
         update_cluster!(walker, system, qmc, cidx)
 
+        # multiply the updated slice to the right factorization
         lmul!(cluster.B[cidx], tmpR[1], ws)
         lmul!(cluster.B[K + cidx], tmpR[2], ws)
-
+        # then merge the right and left factorizations,
+        # note that B_{cidx} is at the leftmost position, i.e.,
+        # U = B_{cidx-1}⋯B_{2}B_{1}⋯B_{cidx+1}B_{cidx}
         mul!(tmpM[1], tmpR[1], tmpL[cidx], ws)
         mul!(tmpM[2], tmpR[2], tmpL[K + cidx], ws)
 
         
-        # G needs to be periodically recomputed
+        # G needs to be periodically recomputed as G = (I + U)⁻¹
         weight[1], sgn[1] = inv_IpμA!(G[1], tmpM[1], walker.expβμ[], ws)
         weight[2], sgn[2] = inv_IpμA!(G[2], tmpM[2], walker.expβμ[], ws)
         weight .*= -1
