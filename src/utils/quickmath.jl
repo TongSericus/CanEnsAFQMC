@@ -1,11 +1,11 @@
 """
     Some math functions
 """
-function sgn(a::T) where {T<:FloatType}
+function sgn(a::T) where {T<:Number}
     return a / abs(a)
 end
 
-function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}
+function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:Number}
     """
     Compute an approximate Fermi level
     """
@@ -13,7 +13,7 @@ function fermilevel(expβϵ::Vector{T}, N::Int64) where {T<:FloatType}
     return sqrt(abs(expβϵ[Ns - N + 1] * expβϵ[Ns - N]))
 end
 
-function regularized_complement(a::T; cutoff::Float64 = 1e-10) where {T<:FloatType}
+function regularized_complement(a::T; cutoff::Float64 = 1e-10) where {T<:Number}
     abs(1 - a) < cutoff && return cutoff
     return 1 - a
 end

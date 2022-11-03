@@ -17,7 +17,7 @@ function next_pow_two(n::Int64)
     return i
 end
 
-function autocorr_func_1d(x::Vector{T}) where {T <: FloatType}
+function autocorr_func_1d(x::Vector{T}) where {T <: Number}
     """
     Estimate the normalized autocorrelation function of a 1-D series
     """
@@ -33,7 +33,7 @@ end
 # Automated windowing procedure following Sokal (1989)
 auto_window(τf, c) = argmin([i for i = 0 : length(τf) - 1] .< c * τf)
 
-function autocorr_gw2010(x::Vector{T}, c::Float64 = 5.0) where {T <: FloatType}
+function autocorr_gw2010(x::Vector{T}, c::Float64 = 5.0) where {T <: Number}
     """
     Following the suggestion from Goodman & Weare (2010)
     """
@@ -42,7 +42,7 @@ function autocorr_gw2010(x::Vector{T}, c::Float64 = 5.0) where {T <: FloatType}
     return τf[auto_window(τf, c)]
 end
 
-function reblock(x::Vector{T}) where {T <: FloatType}
+function reblock(x::Vector{T}) where {T <: Number}
     """
     Compute the reblocked sample averages and error bars using ACF
     """

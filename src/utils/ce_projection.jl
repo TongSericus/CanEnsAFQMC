@@ -13,7 +13,7 @@ function pf_projection(
     returnFull::Bool = false,
     iφ = im * [2 * π * m / Ns for m = 1 : Ns],
     expiφ = exp.(iφ)
-) where {T<:FloatType}
+) where {T<:Number}
     expβμ = fermilevel(expβϵ, N)
     expiφβμ = expiφ / expβμ
 
@@ -28,7 +28,7 @@ function occ_projection(
     Ns::Int64, N::Int64, expβϵ::Vector{T};
     iφ = im * [2 * π * m / Ns for m = 1 : Ns],
     expiφ = exp.(iφ)
-) where {T<:FloatType}
+) where {T<:Number}
     expβμ, η, Z = pf_projection(Ns, N, expβϵ, returnFull=true, iφ=iφ, expiφ=expiφ)
     ñ = [expiφ[m] / expβμ * expβϵ[i] / (1 + expiφ[m] / expβμ * expβϵ[i]) for m = 1 : Ns, i = 1 : Ns]
     n = [sum((conj(expiφ) * expβμ).^N .* ñ[:, i] .* η) / Ns / Z for i = 1 : Ns]

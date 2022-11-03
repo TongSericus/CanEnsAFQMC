@@ -1,1 +1,0 @@
-const FloatType = Union{Float64, ComplexF64, Double64, ComplexDF64}

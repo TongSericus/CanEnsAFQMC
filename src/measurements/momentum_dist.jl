@@ -40,7 +40,7 @@ end
 function measure_nk(
     DFTmats::Vector{Matrix{ComplexF64}},
     G_up::AbstractMatrix{T}, G_dn::AbstractMatrix{T}
-) where {T<:FloatType}
+) where {T<:Number}
     V = size(G_up)[1]
 
     nk_up = zeros(ComplexF64, length(DFTmats))

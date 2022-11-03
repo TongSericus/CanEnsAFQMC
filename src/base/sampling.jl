@@ -1,4 +1,4 @@
-struct RegSample{T<:FloatType, Te, Ns}
+struct RegSample{T<:Number, Te}
     sgn::T
     nk_up::Vector{ComplexF64}
     nk_dn::Vector{ComplexF64}

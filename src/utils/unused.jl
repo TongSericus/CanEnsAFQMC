@@ -29,7 +29,7 @@ function GivensRotation(a::Float64, b::Float64)
     return (c, s, r)
 end
 
-function HessenbergQR(R::Matrix{T}) where {T<:FloatType}
+function HessenbergQR(R::Matrix{T}) where {T<:Number}
     # Compute the QR factorization of an upper-Hessenberg matrix: 
     
     n = size(R, 1)
@@ -50,7 +50,7 @@ function HessenbergQR(R::Matrix{T}) where {T<:FloatType}
     return (Q, R)
 end
 
-function QR_update(F::UDR, u::Vector{T}, v::Vector{T}) where {T<:FloatType}
+function QR_update(F::UDR, u::Vector{T}, v::Vector{T}) where {T<:Number}
     # Compute the QR factorization of Q*R + u*v': 
 
     Q = copy(F.U)

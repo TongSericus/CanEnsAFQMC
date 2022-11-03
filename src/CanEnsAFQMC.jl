@@ -3,9 +3,6 @@ module CanEnsAFQMC
 using Reexport: @reexport
 @reexport using DoubleFloats, LinearAlgebra, StableLinearAlgebra, Statistics, Random, FFTW
 
-export FloatType
-include("./base/constants.jl")
-
 export QMC, GeneralMeasure, EtgMeasure
 export System, Hubbard, nudge_system
 include("./base/systems.jl")

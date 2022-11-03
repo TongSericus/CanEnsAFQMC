@@ -126,7 +126,7 @@ end
 """
     Repartition scheme
 """
-function repartition(F::UDTlr{T}, γ::Float64) where {T<:FloatType}
+function repartition(F::UDTlr{T}, γ::Float64) where {T<:Number}
     d = F.D
     l = length(F.t)
     # truncate from above
@@ -151,7 +151,7 @@ end
 
 function repartition(
     Ns::Int64, N::Int64, F::UDR{T}, γ::Float64, ϵ::Float64
-) where {T<:FloatType}
+) where {T<:Number}
     #normR = [norm(@view F.R[i, :])^2 for i in 1 : Ns]
     #d = F.D .* normR
     dsort = sortperm(F.D, rev = true)
@@ -186,7 +186,7 @@ end
 
 function repartition(
     Ns::Int64, N::Int64, F::UDT{T}, γ::Float64, ϵ::Float64
-) where {T<:FloatType}
+) where {T<:Number}
     d = F.D
 
     # truncation from above

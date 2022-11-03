@@ -4,7 +4,7 @@
 function eigvals_squaredEtgHam(
     eigenGA1::Eigen{T1, T1, Matrix{T1}, Vector{T1}},
     eigenGA2::Eigen{T2, T2, Matrix{T2}, Vector{T2}}
-) where {T1<:FloatType, T2<:FloatType}
+) where {T1<:Number, T2<:Number}
     """
     Compute the eigenvalues of exp(-HA1) * exp(-HA2) in the form
     of GA1 * (I - GA1)^-1 * GA2 * (I - GA2)^-1
@@ -26,7 +26,7 @@ end
 
 function Fourier_weights(
     Ns::Int64, N::Int64, iφ::Vector{ComplexF64}, expβϵ::Vector{T}, logZ::E
-) where {T<:FloatType, E<:FloatType}
+) where {T<:Number, E<:Number}
     """
     Compute the Fourier coefficients in the logrithmic form
     to avoid numerical overflows

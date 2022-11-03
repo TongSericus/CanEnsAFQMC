@@ -12,7 +12,7 @@ end
 function spin_corr(
     system::System, G::Tuple{Matrix{T1}, Matrix{T2}}, 
     r1::Tuple{Int64,Int64}, r2::Tuple{Int64,Int64}
-    ) where {T1<:FloatType, T2<:FloatType}
+    ) where {T1<:Number, T2<:Number}
     """
     calculate spin correlation between two points
     """
@@ -30,7 +30,7 @@ end
 function measure_spincorr_func(
     system::System, G::Tuple{Matrix{T1}, Matrix{T2}}, 
     path::Array{Tuple{Int64,Int64},1}
-    ) where {T1<:FloatType, T2<:FloatType}
+    ) where {T1<:Number, T2<:Number}
     """
     Measure the spin-spin correlation function along a given path
 

@@ -84,7 +84,7 @@ function singlestep_matrix!(
     Bup::AbstractMatrix{T}, Bdn::AbstractMatrix{T}, σ::AbstractArray{Int64}, system::Hubbard;
     useFirstOrderTrotter::Bool = system.useFirstOrderTrotter,
     tmpmat = similar(Bup)
-) where {T<:FloatType}
+) where {T<:Number}
     """
     Compute B = exp(-ΔτK/2) * exp(-ΔτV(σ)) * exp(-ΔτK/2) in-place
     """
