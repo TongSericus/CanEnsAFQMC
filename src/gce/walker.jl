@@ -37,6 +37,7 @@ struct HubbardGCWalker{Tw<:Number, Ts<:Number, T<:Number, F<:Factorization{T}, E
     expβμ::Base.RefValue{Float64}
 
     auxfield::Matrix{Int64}
+    F::Vector{F}
     ws::LDRWorkspace{T, E}
     G::Vector{Matrix{T}}
 
@@ -78,7 +79,7 @@ function HubbardGCWalker(system::System, qmc::QMC; auxfield = 2 * (rand(system.V
     α = system.auxfield[1, 1] / system.auxfield[2, 1]
     α = [α - 1 1/α - 1; 1/α - 1 α - 1]
 
-    return HubbardGCWalker(α, -weight, sign, Ref(expβμ), auxfield, ws, G, tempdata, cluster)
+    return HubbardGCWalker(α, -weight, sign, Ref(expβμ), auxfield, F, ws, G, tempdata, cluster)
 end
 
 ### GC Walker for General Model ###

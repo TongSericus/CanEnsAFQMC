@@ -10,7 +10,7 @@ function update_cluster!(
     K = qmc.K
     
     α = walker1.α
-    ws = walker.ws
+    ws = walker1.ws
 
     Bl1 = walker1.tempdata.cluster.B
     cluster1 = walker1.cluster
@@ -21,7 +21,7 @@ function update_cluster!(
     G2 = walker2.G
 
     for i in 1 : k
-        l = (cidx - 1) * k + i
+        l = (cidx - 1) * qmc.stab_interval + i
         @views σ1 = flip_HSField.(walker1.auxfield[:, l])
         @views σ2 = flip_HSField.(walker2.auxfield[:, l])
 
@@ -145,7 +145,10 @@ function sweep!(system::Hubbard, qmc::QMC, walker1::HubbardGCWalker, walker2::Hu
     run_full_propagation_reverse(walker1.auxfield, system, qmc, ws, FC = walker1.tempdata.FC)
     run_full_propagation_reverse(walker2.auxfield, system, qmc, ws, FC = walker2.tempdata.FC)
 
-    # reset Fτs to unit matrices
+    # save Fτs
+    copyto!.(walker1.F, tmpR1)
+    copyto!.(walker2.F, tmpR2)
+    # then reset Fτs to unit matrices
     ldr!(tmpR1[1], I)
     ldr!(tmpR1[2], I)
     ldr!(tmpR2[1], I)
@@ -325,7 +328,7 @@ end
 function update_cluster_reverse!(
     walker1::GeneralGCWalker, walker2::GeneralGCWalker, system::System, qmc::QMC, 
     cidx::Int64, F1::Vector{LDR{T,E}}, F2::Vector{LDR{T,E}}
-) where {T<:Number, E<:Real, C}
+) where {T<:Number, E<:Real}
     """
     Update the propagation matrices of size equaling to the stablization interval
     """

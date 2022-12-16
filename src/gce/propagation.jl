@@ -1,7 +1,7 @@
 """
     Monte Carlo Propagation in the GC
 """
-function update_G!(G::AbstractMatrix{T}, α::Float64, d::Float64, sidx::Int64) where {T, E}
+function update_G!(G::AbstractMatrix{T}, α::Float64, d::Float64, sidx::Int64) where {T}
     """
     Fast update the Green's function at the ith site:
     G ← G - α_{i, σ} / d_{i, i} * u * wᵀ
@@ -41,7 +41,7 @@ function update_cluster!(
     α = walker.α
 
     for i in 1 : k
-        l = (cidx - 1) * k + i
+        l = (cidx - 1) * qmc.stab_interval + i
         @views σ = flip_HSField.(walker.auxfield[:, l])
         for j in 1 : system.V
             # compute ratios of determinants through G
@@ -110,7 +110,9 @@ function sweep!(system::Hubbard, qmc::QMC, walker::HubbardGCWalker)
     # At the end of the simulation, recompute all partial factorizations
     run_full_propagation_reverse(walker.auxfield, system, qmc, ws, FC = walker.tempdata.FC)
 
-    # reset Fτs to unit matrices
+    # save Fτs
+    copyto!.(walker.F, tmpR)
+    # then reset Fτs to unit matrices
     ldr!(tmpR[1], I)
     ldr!(tmpR[2], I)
 
