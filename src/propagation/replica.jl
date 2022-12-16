@@ -156,7 +156,7 @@ function update_cluster!(
     """
     Update the propagation matrices of size equaling to the stablization interval
     """
-    k = qmc.stab_interval
+    k = qmc.K_interval[cidx]
     K = qmc.K
     P = walker1.tempdata.P
 
@@ -173,11 +173,11 @@ function update_cluster!(
     R2 .*= [cluster2.B[cidx], cluster2.B[K + cidx]]
 
     for i in 1 : k
-        σ1 = @view walker1.auxfield[:, (cidx - 1) * k + i]
+        σ1 = @view walker1.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
         singlestep_matrix!(Bl1[i], Bl1[k + i], σ1, system, tmpmat = walker1.ws.M)
         R1 .*= [inv(Bl1[i]), inv(Bl1[k + i])]
 
-        σ2 = @view walker2.auxfield[:, (cidx - 1) * k + i]
+        σ2 = @view walker2.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
         singlestep_matrix!(Bl2[i], Bl2[k + i], σ2, system, tmpmat = walker2.ws.M)
         R2 .*= [inv(Bl2[i]), inv(Bl2[k + i])]
 

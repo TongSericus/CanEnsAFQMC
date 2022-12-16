@@ -19,7 +19,7 @@ function compute_PF(
     PMat = zeros(ComplexF64, Ns + 1, Ns)
 ) where T
     λ = eigvals(F)
-    return pf_recursion(λ, N, P=PMat)
+    return @views pf_recursion(λ, N, P = PMat[N + 1, :])
 end
 
 function calc_trial(
@@ -233,18 +233,18 @@ end
 
 ### UDT with low-rank truncation ###
 function compute_PF(
-    F::UDTlr, N::Int64;
+    F::UDTlr{T}, N::Int64;
     Ns = length(F.t[]),
-    PMat = zeros(ComplexF64, Ns + 1, Ns),
+    PMat = zeros(ComplexF64, N + 1, Ns),
     isRepart::Bool = false, rpThld::Float64 = 1e-4
-)
+) where T
     if isRepart
         λocc, λf = repartition(F, rpThld)
         λ = vcat(λf, λocc)
-        return pf_recursion(λ, N, P=PMat)
+        return pf_recursion(λ, N, P = PMat)
     else
         λ = eigvals(F)
-        return pf_recursion(λ, N, P=PMat)
+        return pf_recursion(λ, N, P = PMat)
     end
 end
 

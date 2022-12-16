@@ -33,11 +33,12 @@ function quick_rotation(expiφ::Vector{ComplexF64}, N::Int64, isConj::Bool = fal
 end
 
 function poissbino(
-    Ns::Int64, ϵ::Array{T,1};
-    isNormalized::Bool = false,
-    P = zeros(eltype(ϵ), Ns + 1, Ns),
-    cutoff = 1e-10
-) where {T<:Number}
+    ϵ::AbstractVector{T};
+    Ns::Int64 = length(ϵ),
+    ν1::AbstractVector{T} = ϵ ./ (1 .+ ϵ),
+    ν2::AbstractVector{T} = 1 ./ (1 .+ ϵ),
+    P::AbstractMatrix{Tp} = zeros(eltype(ϵ), Ns + 1, Ns)
+) where {T<:Number, Tp<:Number}
     """
     A regularized version of the recursive calculation for the Poisson binomial
     distribution
@@ -47,16 +48,6 @@ function poissbino(
     # Argument
     ϵ -> eigenvalues
     """
-    ν1 = zeros(T, Ns)
-    ν2 = zeros(T, Ns)
-    if isNormalized
-        ν1 = ϵ .+ (abs.(ϵ) .< cutoff) * cutoff
-        ν2 = 1 .- ϵ .+ (abs.(1 .- ϵ) .< cutoff) * cutoff
-    else
-        ν1 = ϵ ./ (1 .+ ϵ)
-        ν2 = 1 ./ (1 .+ ϵ)
-    end
-
     # Initialization
     P[1, 1] = ν2[1]
     P[2, 1] = ν1[1]
@@ -66,6 +57,31 @@ function poissbino(
         # iteration over number of successes
         for j = 2 : i + 1
             P[j, i] = ν2[i] * P[j, i - 1] + ν1[i] * P[j - 1, i - 1]
+        end
+    end
+
+    return P
+end
+
+function poissbino(
+    ϵ::AbstractVector{T}, N::Int64;
+    Ns::Int64 = length(ϵ),
+    ν1::AbstractVector{T} = ϵ ./ (1 .+ ϵ),
+    ν2::AbstractVector{T} = 1 ./ (1 .+ ϵ),
+    P::AbstractMatrix{Tp} = zeros(eltype(ϵ), N + 1, Ns)
+) where {T<:Number, Tp<:Number}
+    """
+    Same Poisson binomial recursion scheme but stops at the Nth iteration
+    """
+    # Initialization
+    P[1, 1] = ν2[1]
+    P[2, 1] = ν1[1]
+    # iteration over trials
+    for i = 2 : Ns
+        @inbounds P[1, i] = ν2[i] * P[1, i - 1]
+        # iteration over number of successes
+        for j = 2 : min(i + 1, N + 1)
+            @inbounds P[j, i] = ν2[i] * P[j, i - 1] + ν1[i] * P[j - 1, i - 1]
         end
     end
 

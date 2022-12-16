@@ -4,29 +4,34 @@
     # General Arguments
     Ns -> number of energy levels
     N -> desired particle number (number of recursions)
-    expβϵ -> exponentiated spectrum, i.e., exp(-βϵ)
+    λ -> exponentiated spectrum, i.e., exp(-βϵ)
 """
 function pf_recursion(
-    expβϵ::Vector{T}, N::Int64;
+    λ::AbstractVector{T}, N::Int;
     isReal::Bool = false,
-    useDouble::Bool = false,
-    Ns = length(expβϵ),
-    P = zeros(eltype(expβϵ), Ns + 1, Ns)
-) where {T<:Number}
+    Ns = length(λ),
+    P::AbstractMatrix{Tp} = zeros(eltype(λ), N + 1, Ns)
+) where {T, Tp}
     """
     Recursive calculation of the partition function
     """
-    isReal || (expβϵ = complex(expβϵ))
+    isReal || (λ = complex(λ))
 
     N == 0 && return convert(T, 0.0), 1.0
     if N == 1 
-        logZ = log(sum(expβϵ))
+        logZ = log(sum(λ))
         abslogZ = real(logZ)
         sgnlogZ = exp(imag(logZ)im)
 
         return abslogZ, sgnlogZ
     elseif N == Ns
-        logZ = sum(log.(expβϵ))
+        logZ = sum(log.(λ))
+        abslogZ = real(logZ)
+        sgnlogZ = exp(imag(logZ)im)
+
+        return abslogZ, sgnlogZ
+    elseif N == Ns - 1
+        logZ = sum(log.(λ)) - log(sum(λ))
         abslogZ = real(logZ)
         sgnlogZ = exp(imag(logZ)im)
 
@@ -34,21 +39,57 @@ function pf_recursion(
     end
     
     # rescale spectrum
-    expβμ = fermilevel(expβϵ, N)
-    expβϵμ = expβϵ / expβμ
-    # map to higher precision
-    useDouble && (expβϵμ = ComplexDF64.(expβϵμ))
+    expβμ = fermilevel(λ, N)
+    expβϵμ = λ / expβμ
     
-    poissbino(Ns, expβϵμ, P=P)
+    poissbino(expβϵμ, N, P=P)
 
-    if N > Ns / 2
-        # non-logarithmic version: Z(N) = P(N) / P(Ns) * expβμ^(N - Ns) * Z(Ns)
-        logZ = log(P[N+1, Ns]) - log(P[Ns+1, Ns]) - (Ns - N)*log(expβμ) + sum(log.(expβϵ))
-    else
-        # non-logarithmic version: Z(N) = P(N) / P(0) * expβμ^N
-        logP0 = -sum(log.(1 .+ expβϵμ))
-        logZ = log(P[N+1, Ns]) - logP0 + N*log(expβμ)
+    logP0 = -sum(log.(1 .+ expβϵμ))
+    logZ = log(P[N+1, Ns]) - logP0 + N*log(expβμ)
+
+    abslogZ = real(logZ)
+    sgnlogZ = exp(imag(logZ)im)
+
+    return abslogZ, sgnlogZ
+end
+
+function pf_recursion(
+    λ::Vector{T}, N::Int, ϵ::Float64;
+    isReal::Bool = false,
+    Ns = length(λ),
+    P::AbstractMatrix{Tp} = zeros(eltype(λ), N + 1, Ns)
+) where {T, Tp}
+    """
+    Recursive calculation of the partition function with low-temperature approximation
+
+    ϵ -> tolerance for the partition function. Empirically, it can be directly used as
+        the truncation threshold for the level occupancy, p.
+    """
+    isReal || (λ = complex(λ))
+
+    expβμ = fermilevel(λ, N)
+    expβϵμ = λ / expβμ
+
+    p = expβϵμ ./ (1 .+ expβϵμ)
+    Imp = 1 ./ (1 .+ expβϵμ)
+
+    Nsu = 1
+    while real(p[Nsu]) < ϵ
+        Nsu += 1
     end
+    Nsl = Ns
+    while real(1 - p[Nsl]) < ϵ
+        Nsl -= 1
+    end
+
+    λocc = @view λ[Nsl + 1 : Ns]
+    λf = @view expβϵμ[Nsu : Nsl]
+    Nsf = length(λf)
+    Nf = N - (Ns - Nsl)
+    poissbino(λf, Nf, P=P, ν1 = (@view p[Nsu : Nsl]), ν2= (@view Imp[Nsu : Nsl]))
+
+    logP0 = -sum(log.(1 .+ λf))
+    logZ = log(P[Nf+1, Nsf]) - logP0 + Nf*log(expβμ) + sum(log.(λocc))
 
     abslogZ = real(logZ)
     sgnlogZ = exp(imag(logZ)im)
@@ -57,23 +98,23 @@ function pf_recursion(
 end
 
 function occ_recursion(
-    expβϵ::Vector{T}, N::Int64;
+    λ::Vector{T}, N::Int64;
     isReal::Bool = false,
-    Ns = length(expβϵ),
-    P = zeros(eltype(expβϵ), Ns + 1, Ns)
-) where {T<:Number}
+    Ns::Int = length(λ),
+    P::AbstractMatrix{Tp} = zeros(eltype(λ), Ns + 1, Ns)
+) where {T<:Number, Tp<:Number}
     """
     Recursive calculation of the occupation number
     """
-    isReal || (expβϵ = complex(expβϵ))
+    isReal || (λ = complex(λ))
 
     N == 0 && return zeros(T, Ns)
     N == Ns && return ones(T, Ns)
-    N == 1 && return expβϵ / sum(expβϵ)
+    N == 1 && return λ / sum(λ)
 
-    expβμ = fermilevel(expβϵ, N)
-    expβϵμ = expβϵ / expβμ
-    poissbino(Ns, expβϵμ, P=P)
+    expβμ = fermilevel(λ, N)
+    expβϵμ = λ / expβμ
+    poissbino(expβϵμ, P=P)
 
     # num of energy levels below the Fermi level
     # use this formula to ensure complex conjugate pairs are in the same section
@@ -120,8 +161,8 @@ function occ_recursion_rescaled(
 end
 
 function second_order_corr(
-    expβϵ::Array{T,1}, ni::Array{Tn,1};
-    Ns = length(expβϵ), ninj = zeros(Tn, Ns, Ns)
+    λ::Array{T,1}, ni::Array{Tn,1};
+    Ns = length(λ), ninj = zeros(Tn, Ns, Ns)
 ) where {T<:Number, Tn<:Number}
     """
     Generate second-order correlation matrix, i.e., ⟨n_{i} n_{j}⟩ using the formula:
@@ -133,12 +174,12 @@ function second_order_corr(
         ninj[i, i] = ni[i]
     end
 
-    λ = 1 ./ expβϵ
+    λ⁻¹ = 1 ./ λ
     @inbounds for i in 2 : Ns
-        niexpβϵ = ni[i] * λ[i]
+        niλ⁻¹ = ni[i] * λ⁻¹[i]
         for j in 1 : i - 1
-            njexpβϵ = ni[j] * λ[j]
-            ninj[j, i] = (njexpβϵ - niexpβϵ) / (λ[j] - λ[i])
+            njλ⁻¹ = ni[j] * λ⁻¹[j]
+            ninj[j, i] = (njλ⁻¹ - niλ⁻¹) / (λ⁻¹[j] - λ⁻¹[i])
             ninj[i, j] = ninj[j, i]
         end
     end

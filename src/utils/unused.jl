@@ -87,3 +87,63 @@ function QR_update(F::UDR, u::Vector{T}, v::Vector{T}) where {T<:Number}
     # Return updated QR factorization: 
     return UDR(Q * Q1, D, R1)
 end
+
+### Two-body Observables Calculation ###
+function compute_γ!(
+    γ::AbstractArray{Ty, 3},
+    λ::Vector{T}, N::Int, P::AbstractMatrix{Tp}, invP::AbstractMatrix{Tp};
+    Ns = length(λ),
+    Nft = length(λ),
+    iφ = im * [2 * π * m / Nft for m = 1 : Nft],
+    expiφ = exp.(iφ)
+) where {Ty, T, Tp}
+    """
+    Compute the Fourier-frequency-dependent one-body debsity matrices
+    """
+    expβμ, expiφmβμ, η, logZ = pf_projection_stable(λ, N, returnFull=true, Nft=Nft, iφ=iφ, expiφ=expiφ)
+    
+    ñ = zeros(ComplexF64, Ns)
+    mat = similar(invP)
+    for m in 1 : Nft
+
+        for i in 1 :Ns
+            ñ[i] = expiφmβμ[m] * λ[i] / (1 + expiφmβμ[m] * λ[i])
+        end
+
+        mul!(mat, Diagonal(ñ), invP)
+        @views mul!(γ[:, :, m], P, mat)
+    end
+
+    return log(expβμ), η, logZ
+end
+
+function ninj_projection_stable(
+    λ::Vector{T}, N::Int, P::AbstractMatrix{Tp}, invP::AbstractMatrix{Tp};
+    Ns = length(λ),
+    Nft = length(λ),
+    iφ = im * [2 * π * m / Nft for m = 1 : Nft],
+    expiφ = exp.(iφ),
+    γ = zeros(ComplexF64, Ns, Ns, Nft),
+    ninj = zeros(ComplexF64, Ns, Ns)
+) where {T, Tp}
+    βμ, η, logZ = compute_γ!(
+        γ, λ, N, P, invP, 
+        Ns=Ns, Nft = Nft, iφ=iφ, expiφ=expiφ
+    )
+
+    @inbounds for j in 1 : Ns
+        for i in i : Ns
+            δij = (i == j)
+            for m in 1 : Ns
+                ñiñj = γ[i, i, m] * γ[j, j, m] - γ[j, i, m] * γ[i, j, m] + δij * γ[j, i, m]
+                logñ = -iφ[m] * N + log(ñiñj) + η[m]
+                logninj = logñ + βμ * N - logZ
+                ninj[i, j] += exp(logninj)
+            end
+            ninj[i, j] /= Nft
+            ninj[j, i] = ninj[i, j]
+        end
+    end
+
+    return ninj
+end
