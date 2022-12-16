@@ -42,7 +42,7 @@ const system_ext = Hubbard(
     # system size
     (6, 6), 
     # num. of spin-up/down electrons
-    (9, 9),
+    (18, 18),
     # t
     1.0,
     # U
