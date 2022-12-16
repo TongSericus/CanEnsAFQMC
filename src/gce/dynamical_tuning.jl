@@ -4,59 +4,78 @@
 """
 
 Base.@kwdef struct MuTuner{T<:Number}
-    μ::Float64
+    μ::Base.RefValue{Float64}
     μt::Vector{Float64}
     sgn::Vector{T} = []
     Nt::Vector{T} = []
-    Nsqdt::Vector{T} = []
+    Nt_avg::Base.RefValue{Float64}
+    N²t::Vector{T} = []
 end
 
 function dynamical_tuning(
-    system::System, qmc::QMC, μ0::Float64, T::Int64, mT::Int64;
-    tuner = MuTuner{Float64}(μ0, [μ0], [], [], [])
-)
-    α = system.V / system.U
-    walker = GCEWalker(system, qmc, μ=tuner.μ)
-    μt = tuner.μ
+    system::Hubbard, qmc::QMC, μ0::Float64, T::Int64, mT::Int64;
+    tuner = MuTuner{Float64}(Ref(μ0), [μ0], [], [], Ref(0.0), []),
+    # energy scale
+    α::E = system.V / system.U,
+    # lower bound for the average sign
+    sgn_min::E = 0.1
+) where {E<:AbstractFloat}
+    # target particle number
+    Nₒ = sum(system.N)
+
+    walker = HubbardGCWalker(system, qmc, μ=tuner.μ[])
+    μt = tuner.μ[]
+
+    DM = [DensityMatrices(system), DensityMatrices(system)]
+
     for t in 1 : T
-        # reconstruct the walker
-        expβμ = exp(system.β * μt)
-        walker = GCEWalker{Float64, eltype(walker.cluster.B)}(walker.α, expβμ, walker.auxfield, walker.G, walker.cluster)
+        # change mu of the walker to the new average
+        walker.expβμ[] = exp(system.β * μt)
         # in case the sign problem is severe, collect multiple samples before averaging
         for i = 1 : mT
-            walker = sweep!(system, qmc, walker)
-            G = unshiftG(walker, system)
-            G = [I - G[1]', I - G[2]']
-            sgn = sign(det(G[1])) * sign(det(G[2]))
+            sweep!(system, qmc, walker)
+            
+            sgn = prod(walker.sign)
             push!(tuner.sgn, sgn)
 
-            n = [G[1][i, i] + G[2][i, i] for i in 1 : system.V]
+            fill_DM!(DM[1], walker.G[1])
+            fill_DM!(DM[2], walker.G[2])
+
+            n = tr(DM[1].Do) + tr(DM[2].Do)
             N = sum(n)
-            Nsqd = sum(n * n') - sum(n.^2) + N
+            N²t = sum(n * n') - sum(n.^2) + N
             push!(tuner.Nt, real(N * sgn))
-            push!(tuner.Nsqdt, real(Nsqd * sgn))
+            push!(tuner.N²t, real(N²t * sgn))
         end
 
         t_half = Int64(ceil(length(tuner.μt) / 2))
-        sgn_avg = mean(@view tuner.sgn[t_half : end])
-        μt_avg = mean(@view tuner.μt[t_half : end])
-        Nt_avg = mean(@view tuner.Nt[t_half : end]) / sgn_avg
-        Nsqdt_avg = mean(@view tuner.Nsqdt[t_half : end]) / sgn_avg
 
-        varμt = @views mean(tuner.μt[t_half : end].^2) - μt_avg^2
-        varNt = Nsqdt_avg - Nt_avg^2
-        κ_fluc = system.β * varNt
+        sgn_avg = mean(@view tuner.sgn[t_half : end])
+        sgn_avg = max(sgn_avg, sgn_min)
+
+        μt_avg = mean(@view tuner.μt[t_half : end])
+
+        Nt_avg = mean(@view tuner.Nt[t_half : end]) / sgn_avg
+        tuner.Nt_avg[] = Nt_avg
+        N²t_avg = mean(@view tuner.N²t[t_half : end]) / sgn_avg
+
+        μt_var = @views mean(tuner.μt[t_half : end].^2) - μt_avg^2
+        Nt_var = N²t_avg - Nt_avg^2
+
+        κ_fluc = system.β * Nt_var
         κ_min = α / sqrt(length(tuner.μt) + 1)
-        if varμt <= 0
+
+        if μt_var <= 0
             κ_max = system.V
         else
-            κ_max = sqrt(abs(varNt / varμt))
+            κ_max = sqrt(abs(Nt_var / μt_var))
         end
         κt = max(κ_min, min(κ_max, κ_fluc))
 
-        μt = μt_avg + (sum(system.N) - Nt_avg) / κt
+        μt = μt_avg + (Nₒ - Nt_avg) / κt
         push!(tuner.μt, μt)
+        tuner.μ[] = μt
     end
 
-    return MuTuner{Float64}(μt, tuner.μt, tuner.sgn, tuner.Nt, tuner.Nsqdt)
+    return tuner
 end
