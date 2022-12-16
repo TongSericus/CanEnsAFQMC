@@ -141,14 +141,6 @@ function measure_TransitProb(system::System, μ::Float64, walker::Walker)
     gc_weight = 0
     p_sign = 1.0
 
-    #tmp = inv_IpμA!(G, LDR(F[1].U, F[1].D, F[1].T), expβμ, ws)
-    #gc_weight += -tmp[1]
-    #p_sign *= tmp[2]
-
-    #tmp = inv_IpμA!(G, LDR(F[2].U, F[2].D, F[2].T), expβμ, ws)
-    #gc_weight += -tmp[1]
-    #p_sign *= tmp[2]
-
     tmp = compute_PF(F[1], expβμ)
     gc_weight += tmp[1]
     p_sign *= tmp[2]
@@ -158,17 +150,17 @@ function measure_TransitProb(system::System, μ::Float64, walker::Walker)
     p_sign *= tmp[2]
 
     p = gc_weight - sum(walker.weight) - βμN
-    p_sign *= walker.sign
+    p_sign *= prod(walker.sign)
 
     return min(0, p), p_sign
 end
 
-function measure_TransitProb(system::System, μ::Float64, walker::GCWalker) 
+function measure_TransitProb(system::System, qmc::QMC, μ::Float64, walker::GCWalker) 
     """
         Measure the transition probability p_{μ -> N}(β/2) = min{1, exp(βμN)*Z_{N}(β) / Z_{μ}(β)}
     """
     N = system.N
-    F = walker.F
+    ϵ = qmc.lrThld
 
     βμN = system.β * μ * sum(N)
 
@@ -176,12 +168,12 @@ function measure_TransitProb(system::System, μ::Float64, walker::GCWalker)
     c_weight = 0.0
     p_sign = 1.0
 
-    udtlr = UDTlr(walker.F[1], N[1], qmc.lrThld)
+    udtlr = UDTlr(walker.F[1], N[1], ϵ)
     tmp = compute_PF(udtlr, N[1])
     c_weight += tmp[1]
     p_sign *= tmp[2]
 
-    udtlr = UDTlr(walker.F[2], N[2], qmc.lrThld)
+    udtlr = UDTlr(walker.F[2], N[2], ϵ)
     tmp = compute_PF(udtlr, N[2])
     c_weight += tmp[1]
     p_sign *= tmp[2]

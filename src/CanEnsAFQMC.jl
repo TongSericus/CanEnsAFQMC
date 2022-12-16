@@ -39,15 +39,17 @@ include("./gce/operations.jl")
 include("./gce/propagation.jl")
 include("./gce/replica.jl")
 
+export generate_DFTmat, generate_DFTmats
+include("./measurements/measurements.jl")
 export DensityMatrices, fill_DM!
 include("./measurements/density_matrix.jl")
 export measure_Energy
 include("./measurements/energy.jl")
 export measure_HeatCapacity_denom, measure_HeatCapacity_num
 include("./measurements/heat_capacity.jl")
-export generate_DFTmats, measure_nk
+export measure_MomentumDist
 include("./measurements/momentum_dist.jl")
-export measure_ChargeCorr
+export measure_ChargeCorr, measure_SpinCorr
 include("./measurements/charge_correlation.jl")
 export measure_TransitProb
 include("./measurements/transition_probability.jl")

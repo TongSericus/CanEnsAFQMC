@@ -82,7 +82,8 @@ function compute_P(
     P::AbstractMatrix{T}, invP::AbstractMatrix{T};
     L = size(P),
     P1 = zeros(T, L[2], L[2], L[1], L[1]),
-    P2 = zeros(T, L[2], L[2], L[1], L[1])
+    P2 = zeros(T, L[2], L[2], L[1], L[1]),
+    tmpP = zeros(T, L[2], L[1], L[1])
 ) where {T<:Number}
     """
     Compute the transformation matrices
@@ -90,9 +91,17 @@ function compute_P(
     @inbounds for i = 1 : L[1]
         for j = 1 : L[1]
             for α = 1 : L[2]
-                for β = 1 : L[2]
-                    P1[β, α, j, i] = P[i, α] * invP[α, i] * P[j, β] * invP[β, j]
-                    P2[β, α, j, i] = P[i, α] * invP[α, j] * P[j, β] * invP[β, i]
+                tmpP[α, j, i] = P[i, α] * invP[α, j]
+            end
+        end
+    end
+
+    @inbounds for i = 1 : L[1]
+        for j = 1 : L[1]
+            for α = 1 : L[2]
+                for β = 1 : α
+                    P1[β, α, j, i] = tmpP[α, i, i] * tmpP[β, j, j]
+                    P2[β, α, j, i] = tmpP[α, i, j] * tmpP[β, j, i]
                 end
             end
         end
@@ -112,15 +121,14 @@ function fill_Dt!(
     Compute the elements of the two-body density matrix
     """
     compute_P(P, invP, P1 = P1, P2 = P2)
-    ninj_2 = ni .- ninj
 
     @inbounds for i = 1 : L[1]
         for j = i : L[1]
             s = 0
             for α = 1 : L[2]
                 for β = 1 : L[2]
-                    s += P1[β, α, j, i] * ninj[β, α]
-                    s += P2[β, α, j, i] * ninj_2[β, α]
+                    s += (P1[β, α, j, i] - P2[β, α, j, i]) * ninj[β, α]
+                    s += P2[β, α, j, i] * ni[α]
                 end
             end
             Dt[j, i] = s

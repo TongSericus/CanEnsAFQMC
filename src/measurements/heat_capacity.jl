@@ -6,7 +6,7 @@ function measure_HeatCapacity_denom(
     system_pβ::System, system_mβ::System, qmc::QMC, walker::Walker;
     Z_pmβ::AbstractVector = zeros(Float64, 2),
     sign_pmβ::AbstractVector{ComplexF64} = zeros(ComplexF64, 2),
-    returnF::Bool=false
+    returnF::Bool = false
 )
     N = system_pβ.N
 
