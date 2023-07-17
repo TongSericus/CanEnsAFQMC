@@ -1,89 +1,107 @@
-abstract type System end
+"""
+    Define the regular systems
+"""
 
-mutable struct Hubbard <: System
-    """
-        Constants in the simulation
+abstract type System end
+abstract type Hubbard <: System end
+
+"""
+    Parameters for generic Hubbard models
         
-        Ns -> number of sites in each dimension
-        V -> volume of the lattce
-        N[1] -> number of spin-ups
-        N[2] -> number of spin-downs
-        t -> hopping constant
-        U -> repulsion constant
-        T -> one-body, kinetic matrix (used for one-body measurements)
-        μ -> chemical potential used for the GCE calculations
-        β -> inverse temperature
-        L -> β / Δτ
-        auxfield -> discrete HS variables sorted by field variables (±1) and spins (up/down),
-                    for instance, auxfield[2][1] represents spin-up section with σ = -1
-        Bk -> exponential of the kinetic matrix
-        BT -> trial propagator matrix
-        BTinv -> inverse of trial propagator matrix
-    """
+    Ns -> number of sites in each dimension
+    V -> volume of the lattce
+    N -> number of spin-ups/downs
+    T -> one-body, kinetic matrix
+    U -> repulsion constant
+    μ -> chemical potential used for the GCE calculations
+    β -> inverse temperature
+    L -> β / Δτ
+    auxfield -> discrete HS variables sorted by field variables (±1) and spins (up/down),
+                for instance, auxfield[2][1] represents spin-up section with σ = -1
+    Bk -> exponential of the kinetic matrix
+"""
+struct GenericHubbard{T, Tk} <: Hubbard
     ### Model Constants ###
-    isReal::Bool
-    Ns::Tuple{Int64, Int64}
-    V::Int64
-    N::Tuple{Int64, Int64}
-    t::Float64
+    Ns::Tuple{Int64, Int64, Int64}  # 3D
+    V::Int64    # total dimension
+    N::Tuple{Int64, Int64}  # spin-up and spin-dn
+    T::Tk   # kinetic matrix (can be various forms)
     U::Float64
-    T::Array{Float64,2}
+
+    ### Temperature and Chemical Potential ###
     μ::Float64
-    iφ::Vector{ComplexF64}
-    ### AFQMC Constants ###
     β::Float64
     L::Int64
-    ### Automatically-Generated Constants ###
-    auxfield::Matrix{Float64}
-    # second-order Trotterization: exp(-ΔτK/2) * exp(-ΔτV) * exp(-ΔτK/2)
-    Bk::Matrix{Float64}
-    # first-order Trotterization: exp(-ΔτK) * exp(-ΔτV)
+    
+    ### Automatically-generated Constants ###
+    useChargeHST::Bool
+    auxfield::Vector{T}
+    V₊::Vector{T}
+    V₋::Vector{T}
+
+    # if use first-order Trotterization: exp(-ΔτK) * exp(-ΔτV)
     useFirstOrderTrotter::Bool
-    Bkf::Matrix{Float64}
 
-    function Hubbard(
-        Ns::Tuple{Int64, Int64}, N::Tuple{Int64, Int64},
-        t::Float64, U::Float64,
+    # kinetic propagator
+    Bk::Tk
+    Bk⁻¹::Tk
+
+    function GenericHubbard(
+        Ns::Tuple{Int64, Int64, Int64}, N::Tuple{Int64, Int64},
+        T::AbstractMatrix, U::Float64,
         μ::Float64, β::Float64, L::Int64;
-        isReal::Bool = true, useFirstOrderTrotter::Bool = false
+        sys_type::DataType = ComplexF64,
+        useChargeHST::Bool = false,
+        useFirstOrderTrotter::Bool = false
     )
-        if Ns[2] == 1 
-            T = kinetic_matrix_hubbard1D(Ns[1], t)
-        else
-            T = kinetic_matrix_hubbard2D(Ns[1], Ns[2], t)
-        end
         Δτ = β / L
-        γ = atanh(sqrt(tanh(Δτ * U / 4)))
-        auxfield = [
-            exp(2 * γ - Δτ * U / 2) exp(-2 * γ - Δτ * U / 2);
-            exp(-2 * γ - Δτ * U / 2) exp(2 * γ - Δτ * U / 2)
-        ]
-        iφ = im * [2 * π * m / prod(Ns) for m = 1 : prod(Ns)]
+        useFirstOrderTrotter ? dτ = Δτ : dτ = Δτ/2
+        Bk = exp(-T * dτ)
+        Bk⁻¹ = exp(T * dτ)
 
-        return new(
-            isReal,
-            Ns, prod(Ns), N, t, U, T, 
-            μ, iφ, 
-            β, L, auxfield,
-            exp(-T * Δτ/2), 
-            useFirstOrderTrotter, exp(-T * Δτ)
+        ### HS transform ###
+        # complex HS transform is more stable for entanglement measures
+        # see PRE 94, 063306 (2016) for explanations
+        if useChargeHST
+            γ = sys_type == ComplexF64 ? acosh(exp(-Δτ * U / 2) + 0im) : acosh(exp(-Δτ * U / 2))
+            # use symmetric Hubbard potential
+            auxfield = [exp(γ), exp(-γ)]
+        else
+            γ = sys_type == ComplexF64 ? acosh(exp(Δτ * U / 2) + 0im) : acosh(exp(Δτ * U / 2))
+            auxfield = [exp(γ), exp(-γ)]
+        end
+
+        # add chemical potential
+        @. auxfield *= exp.(μ * Δτ)
+
+        V = prod(Ns)
+        V₊ = zeros(sys_type, V)
+        V₋ = zeros(sys_type, V)
+
+        return new{sys_type, typeof(Bk)}(
+            Ns, V, 
+            N, T, U,
+            μ, β, L,
+            useChargeHST, auxfield, V₊, V₋,
+            useFirstOrderTrotter,
+            Bk, Bk⁻¹
         )
     end
 end
 
-function nudge_system(system::Hubbard, δβ::Float64)
-    """
-    Generate system struct with β' = β ± δβ
-    """
-    system_pβ = Hubbard(
-        system.Ns, system.N, system.t, system.U, system.μ,
-        system.β + δβ, system.L
-    )
-
-    system_mβ = Hubbard(
-        system.Ns, system.N, system.t, system.U, system.μ,
-        system.β - δβ, system.L
-    )
-
-    return system_pβ, system_mβ
-end
+#function nudge_system(system::Hubbard, δβ::Float64)
+#    """
+#    Generate system struct with β' = β ± δβ
+#    """
+#    system_pβ = Hubbard(
+#        system.Ns, system.N, system.t, system.U, system.μ,
+#        system.β + δβ, system.L
+#    )
+#
+#    system_mβ = Hubbard(
+#        system.Ns, system.N, system.t, system.U, system.μ,
+#        system.β - δβ, system.L
+#    )
+#
+#    return system_pβ, system_mβ
+#end

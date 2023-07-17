@@ -1,215 +1,213 @@
+###################################
+##### Basic operations in QMC #####
+###################################
+
 """
-    All operations in the propagation
+    compute_pf(...)
 """
-
-function run_full_propagation(
-    auxfield::AbstractMatrix{Int64}, system::System, qmc::QMC; 
-    K = qmc.K, stab_interval = qmc.stab_interval, K_interval = qmc.K_interval
-)
-    """
-        Stable propagation over the entire space-time auxiliary field
-    from scratch
-
-        # Arguments
-        auxfield -> the entire Ns*L auxiliary field
-
-        # Returns
-        F -> matrix decompositions with Matrix(F) = BL...B1
-    """
-    Ns = system.V
-    N = system.N
-    ϵ = qmc.lrThld
-
-    if qmc.isLowrank
-        F = [UDTlr(Ns), UDTlr(Ns)]
-    elseif qmc.isCP
-        F = [UDT(Ns), UDT(Ns)]
-    else
-        F = [UDR(Ns), UDR(Ns)]
-    end
-
-    FC = Cluster(F[1], 2 * K)
-
-    B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
-    MP = Cluster(Ns, 2 * K)
-
-    for i in 1 : K
-
-        for j = 1 : K_interval[i]
-            @views σ = auxfield[:, (i - 1) * stab_interval + j]
-            singlestep_matrix!(B[1], B[2], σ, system)
-            MP.B[i] = B[1] * MP.B[i]            # spin-up
-            MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
-        end
-
-        copyto!(FC.B[i], F[1])
-        copyto!(FC.B[K + i], F[2])
-
-        qmc.isLowrank ? 
-            F = [QR_lmul(MP.B[i], F[1], N[1], ϵ), QR_lmul(MP.B[K + i], F[2], N[2], ϵ)] :
-            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[K + i], F[2])]
-    end
-
-    return F, MP, FC
-end
-
-function run_full_propagation(MP::Cluster{T}, system::System, qmc::QMC; K = qmc.K) where T
-    """
-        Full propagation over the entire space-time auxiliary field 
-    given the matrix cluster
-    """
-    Ns = system.V
-    N = system.N
-    ϵ = qmc.lrThld
-
-    if qmc.isLowrank
-        F = [UDTlr(Ns), UDTlr(Ns)]
-    elseif qmc.isCP
-        F = [UDT(Ns), UDT(Ns)]
-    else
-        F = [UDR(Ns), UDR(Ns)]
-    end
-
-    for i in 1 : K
-        qmc.isLowrank ?
-            F = [QR_lmul(MP.B[i], F[1], N[1], ϵ), QR_lmul(MP.B[K + i], F[2], N[2], ϵ)] :
-            F = [QR_lmul(MP.B[i], F[1]), QR_lmul(MP.B[K + i], F[2])]
-    end
-
-    return F
-end
-
-### A New Scheme using StableLinearAlgebra Package ###
-function run_full_propagation(
-    auxfield::AbstractMatrix{Int64}, system::System, qmc::QMC, ws::LDRWorkspace{T, E}; 
-    K = qmc.K, stab_interval = qmc.stab_interval, K_interval = qmc.K_interval
+function compute_pf(
+    F::LDR{T, E}, N::Int64;
+    Ns = length(F.d),
+    P = zeros(ComplexF64, Ns+1, Ns)
 ) where {T, E}
-    Ns = system.V
-    N = system.N
-    ϵ = qmc.lrThld
-
-    B = [Matrix{Float64}(undef, Ns, Ns), Matrix{Float64}(undef, Ns, Ns)]
-    MP = Cluster(Ns, 2 * K)
-
-    F = ldrs(B[1], 2)
-    if qmc.isLowrank
-        F = [UDTlr(F[1], N[1], ϵ), UDTlr(F[2], N[2], ϵ)]
-        FC = FC = Cluster(F[1], 2 * K)
-    else
-        FC = Cluster(B = ldrs(B[1], 2 * K))
-    end
-
-    for i in 1 : K
-
-        for j = 1 : K_interval[i]
-            @views σ = auxfield[:, (i - 1) * stab_interval + j]
-            singlestep_matrix!(B[1], B[2], σ, system, tmpmat = ws.M)
-            MP.B[i] = B[1] * MP.B[i]            # spin-up
-            MP.B[K + i] = B[2] * MP.B[K + i]    # spin-down
-        end
-
-        copyto!(FC.B[i], F[1])
-        copyto!(FC.B[K + i], F[2])
-
-        if qmc.isLowrank
-            lmul!(MP.B[i], F[1], N[1], ϵ, ws)
-            lmul!(MP.B[K + i], F[2], N[2], ϵ, ws)
-        else
-            lmul!(MP.B[i], F[1], ws)
-            lmul!(MP.B[K + i], F[2], ws)
-        end
-    end
-
-    return F, MP, FC
+    λ = eigvals(F)
+    return compute_pf_recursion(λ, N, P=P)
 end
 
 """
-    Repartition scheme
+    compute_pf(...)
 """
-function repartition(F::UDTlr{T}, γ::Float64) where {T<:Number}
-    d = F.D
-    l = length(F.t)
-    # truncate from above
-    Nu = div(l, 3)
-    γmin = d[Nu + 1] / d[Nu]
+function compute_pf(
+    M::LDRLowRank{T, E};
+    Ns = length(M.F.d),
+    P = zeros(ComplexF64, Ns+1, Ns)
+) where {T, E}
+    λ = eigvals(M)
+    return compute_pf_recursion(λ, M.N, P=P)
+end
 
-    for Nt = div(l, 3) : div(2 * l, 3)
-        d[Nt + 1] / d[Nt] < γmin && (γmin = d[Nt + 1] / d[Nt]; Nu = Nt)
+"""
+    compute_Metropolis_ratio(...)
+"""
+function compute_Metropolis_ratio(
+    system::System, walker::Walker, σ::AbstractArray{Int}, 
+    F::Vector{LDR{T,E}}
+) where {T,E}
+    weight = walker.weight
+    weight′ = walker.weight′
+    sgn′ = walker.sign′
+
+    ws = walker.ws
+    Bτ = walker.Bτ.B
+    F₊, F₋ = F
+
+    imagtime_propagator!(Bτ[1], Bτ[2], σ, system, tmpmat=ws.M)
+
+    L₊ = ws.M′
+    mul!(L₊, Bτ[1], F₊.L)
+    M₊ = LDR(L₊, F₊.d, F₊.R)
+    weight′[1], sgn′[1] = compute_pf(M₊, system.N[1], P=walker.P)
+    
+    L₋ = ws.M″
+    mul!(L₋, Bτ[2], F₋.L)
+    M₋ = LDR(L₋, F₋.d, F₋.R)
+    weight′[2], sgn′[2] = compute_pf(M₋, system.N[2], P=walker.P)
+
+    r = exp(sum(weight′) - sum(weight))
+
+    return r
+end
+
+"""
+    compute_Metropolis_ratio(...)
+"""
+function compute_Metropolis_ratio(
+    system::System, walker::Walker, σ::AbstractArray{Int}, M::Vector{LDRLowRank{T,E}}
+) where {T,E}
+    weight = walker.weight
+    weight′ = walker.weight′
+    sgn′ = walker.sign′
+
+    ws = walker.ws
+    Bτ = walker.Bτ.B
+    F₊ = M[1].F
+    F₋ = M[2].F
+
+    imagtime_propagator!(Bτ[1], Bτ[2], σ, system, tmpmat=ws.M)
+
+    L₊ = ws.M′
+    @views mul!(L₊[:, M[1].t[]], Bτ[1], F₊.L[:, M[1].t[]])
+    M₊ = LDRLowRank(LDR(L₊, F₊.d, F₊.R), M[1].N, M[1].ϵ, M[1].t)
+    weight′[1], sgn′[1] = compute_pf(M₊, P=walker.P)
+    
+    L₋ = ws.M″
+    @views mul!(L₋[:, M[2].t[]], Bτ[2], F₋.L[:, M[2].t[]])
+    M₋ = LDRLowRank(LDR(L₋, F₋.d, F₋.R), M[2].N, M[2].ϵ, M[2].t)
+    weight′[2], sgn′[2] = compute_pf(M₋, P=walker.P)
+
+    r = exp(sum(weight′) - sum(weight))
+
+    return r
+end
+
+"""
+    prod_cluster!(B::AbstractMatrix, Bl::AbstractArray{T}, C::AbstractMatrix)
+
+    In-place calculation of prod(Bl) and overwrite the result to B, with an auxiliary matrix C
+"""
+function prod_cluster!(B::AbstractMatrix, Bl::AbstractArray{T}, C::AbstractMatrix) where {T<:AbstractMatrix}
+    size(B) == size(Bl[1]) == size(C) || throw(BoundsError())
+    k = length(Bl)
+    k == 1 && (copyto!(B, Bl[1]); return nothing)
+    k == 2 && (mul!(B, Bl[1], Bl[2]); return nothing)
+
+    mul!(C, Bl[1], Bl[2])
+    @inbounds for i in 3:k
+        mul!(B, C, Bl[i])
+        copyto!(C, B)
+    end
+
+    return nothing
+end
+
+############################################
+##### Full Imaginary-time Propagations #####
+############################################
+"""
+    build_propagator(auxfield, system, qmc, ws)
+
+    Propagate over the full space-time lattice given the auxiliary field configuration
+"""
+function build_propagator(
+    auxfield::AbstractMatrix{Int64}, system::System, qmc::QMC, ws::LDRWorkspace{T,E}; 
+    isReverse::Bool = true, K = qmc.K, K_interval = qmc.K_interval
+) where {T, E}
+    V = system.V
+    si = qmc.stab_interval
+
+    # initialize partial matrix products
+    Tb = eltype(system.auxfield)
+    B = [Matrix{Tb}(I, V, V), Matrix{Tb}(I, V, V)]
+    MatProd = Cluster(V, 2 * K, T = Tb)
+    F = ldrs(B[1], 2)
+    FC = Cluster(B = ldrs(B[1], 2 * K))
+
+    Bm = MatProd.B
+    Bf = FC.B
+
+    isReverse && begin
+        for i in K:-1:1
+            for j = 1 : K_interval[i]
+            @views σ = auxfield[:, (i - 1) * si + j]
+            imagtime_propagator!(B[1], B[2], σ, system, tmpmat=ws.M)
+            Bm[i] = B[1] * Bm[i]            # spin-up
+            Bm[K + i] = B[2] * Bm[K + i]    # spin-down
+        end
+
+        # save all partial products
+        copyto!(Bf[i], F[1])
+        copyto!(Bf[K + i], F[2])
+
+        rmul!(F[1], Bm[i], ws)
+        rmul!(F[2], Bm[K + i], ws)
+    end
+
+        return F, MatProd, FC
+    end
+
+    for i in 1:K
+        for j = 1 : K_interval[i]
+            @views σ = auxfield[:, (i - 1) * si + j]
+            imagtime_propagator!(B[1], B[2], σ, system, tmpmat=ws.M)
+            Bm[i] = B[1] * Bm[i]            # spin-up
+            Bm[K + i] = B[2] * Bm[K + i]    # spin-down
+        end
+
+        copyto!(Bf[i], F[1])
+        copyto!(Bf[K + i], F[2])
+
+        lmul!(Bm[i], F[1], ws)
+        lmul!(Bm[K + i], F[2], ws)
+    end
+
+    return F, MatProd, FC
+end
+
+"""
+    build_propagator!(Fc, MatProd, ws)
+
+    Propagate over the full space-time lattice given the matrix clusters
+"""
+function build_propagator!(
+    Fc::Vector{Fact}, MatProd::Cluster{C}, ws::LDRWorkspace{T,E};
+    K = div(length(MatProd.B), 2),
+    isReverse::Bool = true, isSymmetric::Bool = false
+) where {Fact, C, T, E}
+    V = size(MatProd.B[1])
+    i = eltype(ws.M) <: Real ? 1.0 : 1.0+0.0im
+    F = ldrs(Matrix(i*I, V), 2)
+
+    Bm = MatProd.B
+
+    isReverse && begin 
+        for n in K:-1:1
+            copyto!(Fc[n], F[1])
+            isSymmetric || copyto!(Fc[K + n], F[2])
+
+            rmul!(F[1], Bm[n], ws)
+            isSymmetric || rmul!(F[2], Bm[K + n], ws)
+        end
+
+        return F
+    end
+
+    for n in 1:K
+        copyto!(Fc[n], F[1])
+        isSymmetric || copyto!(Fc[K + n], F[2])
+
+        lmul!(Bm[n], F[1], ws)
+        isSymmetric || lmul!(Bm[K + n], F[2], ws)
     end
     
-    γmin > γ && return eigvals(F), []
-    tocc = 1 : Nu
-    tf = Nu + 1 : F.t.stop
-
-    B = @views F.T[F.t, :] * F.U[:, F.t]
-    P = @views B[tf, tocc] * inv(B[tocc, tocc])
-    Mocc = @views B[tocc, tocc] * Diagonal(F.D[tocc]) + B[tocc, tf] * Diagonal(F.D[tf]) * P
-    Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[tf])
-
-    return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
-end
-
-function repartition(
-    Ns::Int64, N::Int64, F::UDR{T}, γ::Float64, ϵ::Float64
-) where {T<:Number}
-    #normR = [norm(@view F.R[i, :])^2 for i in 1 : Ns]
-    #d = F.D .* normR
-    dsort = sortperm(F.D, rev = true)
-    d = F.D[dsort]
-
-    # truncation from above
-    Nu = N - 1
-    while Nu > 0 && d[Nu + 1] / d[Nu] > γ
-        Nu -= 1
-    end
-    tocc = 1 :Nu
-    t1 = @view dsort[tocc]
-
-    # truncation from below
-    dl = d[N] * ϵ
-    Nl = N
-    while Nl < Ns + 1 && d[Nl] > dl
-        Nl += 1
-    end
-    tf = Nu + 1 : Nl - 1
-    t2 = @view dsort[tf]
-
-    t =  [t1; t2] # union of t1 and t2
-    B = @views F.R[t, :] * F.U[:, t]
-    P = @views B[tf, tocc] * inv(B[tocc, tocc])
-
-    Mocc = @views B[tocc, tocc] * Diagonal(F.D[t1]) + B[tocc, tf] * Diagonal(F.D[t2]) * P
-    Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[t2])
-
-    return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
-end
-
-function repartition(
-    Ns::Int64, N::Int64, F::UDT{T}, γ::Float64, ϵ::Float64
-) where {T<:Number}
-    d = F.D
-
-    # truncation from above
-    Nu = N - 1
-    while Nu > 0 && d[Nu + 1] / d[Nu] > γ
-        Nu -= 1
-    end
-    tocc = 1 : Nu
-
-    # truncation from below
-    dl = d[N] * ϵ
-    Nl = N
-    while Nl < Ns + 1 && d[Nl] > dl
-        Nl += 1
-    end
-    tf = Nu + 1 : Nl - 1
-
-    t = 1 : Nl - 1 # union of t1 and t2
-    B = @views F.T[t, :] * F.U[:, t]
-    P = @views B[tf, tocc] * inv(B[tocc, tocc])
-
-    Mocc = @views B[tocc, tocc] * Diagonal(F.D[tocc]) + B[tocc, tf] * Diagonal(F.D[tf]) * P
-    Mf = @views (B[tf, tf] - P * B[tocc, tf]) * Diagonal(F.D[tf])
-
-    return eigvals(Mocc, sortby=abs), eigvals(Mf, sortby=abs)
+    return F
 end

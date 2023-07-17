@@ -2,64 +2,81 @@
     Generate matrices for constructing the propagator
 """
 
-function kinetic_matrix_hubbard1D(Ns::Int64, t::Float64)
+function hopping_matrix_Hubbard_1d(
+    L::Int, t::Float64;
+    isOBC::Bool = true
+)
+    T = zeros(L, L)
 
-    T = zeros(Ns, Ns)
-
-    for i =  1 : Ns
-        # indices of nearest neighbours (nn) of i
-        nn_lf = mod(i, Ns) + 1
-        nn_rg = mod(i - 2, Ns) + 1
-
-        T[i, nn_lf] = -t
-        T[i, nn_rg] = -t
+    isOBC ? begin
+        hop_ind_left = [CartesianIndex(i+1, (i+1)%L+1) for i in 0 : L-2]
+        hop_ind_right = [CartesianIndex((i+1)%L+1, i+1) for i in 0 : L-2]
+        hop_amp = [-t for _ in 0 : L-2]
+    end :
+    # periodic boundary condition
+    begin
+        hop_ind_left = [CartesianIndex(i+1, (i+1)%L+1) for i in 0 : L-1]
+        hop_ind_right = [CartesianIndex((i+1)%L+1, i+1) for i in 0 : L-1]
+        hop_amp = [-t for _ in 0 : L-1]
     end
 
-    return T
-end
-
-decode_basis(i::Int64, NsX::Int64) = [(i - 1) % NsX + 1, div(i - 1, NsX) + 1]
-encode_basis(i::Int64, j::Int64, NsX::Int64) = i + (j - 1) * NsX
-
-function kinetic_matrix_hubbard2D(NsX::Int64, NsY::Int64, t::Float64)
-    """
-    Cartesian lattice coordinates:
-    (1,3) (2,3) (3,3)       7 8 9
-    (1,2) (2,2) (3,2)  ->   4 5 6
-    (1,1) (2,1) (3,1)       1 2 3
-    """
-
-    Ns = NsX * NsY
-    T = zeros(Ns, Ns)
-
-    for i = 1 : Ns
-        ix, iy = decode_basis(i, NsX)
-        # indices of nearest neighbours (nn) of (i, j)
-        nn_up = mod(iy, NsY) + 1
-        nn_dn = mod(iy - 2, NsY) + 1
-        nn_lf = mod(ix, NsX) + 1
-        nn_rg = mod(ix - 2, NsX) + 1
-
-        T[i, encode_basis(ix, nn_up, NsX)] = -t
-        T[i, encode_basis(ix, nn_dn, NsX)] = -t
-        T[i, encode_basis(nn_lf, iy, NsX)] = -t
-        T[i, encode_basis(nn_rg, iy, NsX)] = -t
-    end
-
-    return T
-end
-
-function auxfield_matrix_hubbard(σ::AbstractArray{Int64}, auxfield::Matrix{Float64})
-    """
-    Hubbard HS field matrix generator
-    """
-    pfield = isone.(σ)
-    mfield = isone.(-σ)
+    @views T[hop_ind_left] = hop_amp
+    @views T[hop_ind_right] = hop_amp
     
-    afmat_up = pfield * auxfield[1,1] .+ mfield * auxfield[2,1]
-    afmat_dn = pfield * auxfield[1,2] .+ mfield * auxfield[2,2]
+    return T
+end
 
-    return afmat_up, afmat_dn
+function hopping_matrix_Hubbard_2d(Lx::Int, Ly::Int64, t::Float64)
+    L = Lx * Ly
+    T = zeros(L, L)
+
+    x = collect(0:L-1) .% Lx       # x positions for sites
+    y = div.(collect(0:L-1), Lx)   # y positions for sites
+    T_x = (x .+ 1) .% Lx .+ Lx * y      # translation along x-direction
+    T_y = x .+ Lx * ((y .+ 1) .% Ly)    # translation along y-direction
+
+    hop_ind_left = [CartesianIndex(i+1, T_x[i+1] + 1) for i in 0 : L-1]
+    hop_ind_right = [CartesianIndex(T_x[i+1] + 1, i+1) for i in 0 : L-1]
+    hop_ind_down = [CartesianIndex(i+1, T_y[i+1] + 1) for i in 0 : L-1]
+    hop_ind_up = [CartesianIndex(T_y[i+1] + 1, i+1) for i in 0 : L-1]
+
+    @views T[hop_ind_left] .= -t
+    @views T[hop_ind_right] .= -t
+    @views T[hop_ind_down] .= -t
+    @views T[hop_ind_up] .= -t
+    
+    return T
+end
+
+### Auxiliary-field Matrix ###
+"""
+    auxfield_matrix_hubbard(σ, auxfield)
+    
+    Hubbard HS field matrix generator
+"""
+function auxfield_matrix_hubbard(
+    σ::AbstractArray{Int}, auxfield::Vector{T};
+    V₊ = zeros(T, length(σ)),
+    V₋ = zeros(T, length(σ)),
+    isChargeHST::Bool = false
+) where T
+    isChargeHST && begin
+        for i in eachindex(σ)
+            isone(σ[i]) ? (idx₊ = idx₋ = 1) : (idx₊ = idx₋ = 2)
+            V₊[i] = auxfield[idx₊]
+            V₋[i] = auxfield[idx₋]
+        end
+        
+        return V₊, V₋
+    end
+    
+    for i in eachindex(σ)
+        isone(σ[i]) ? (idx₊ = 1; idx₋ = 2) : (idx₊ = 2; idx₋ = 1)
+        V₊[i] = auxfield[idx₊]
+        V₋[i] = auxfield[idx₋]
+    end
+    
+    return V₊, V₋
 end
 
 function singlestep_matrix(
@@ -99,6 +116,68 @@ function singlestep_matrix!(
         
         mul!(tmpmat, Diagonal(afmat_dn), system.Bk)
         mul!(Bdn, system.Bk, tmpmat)
+    end
+
+    return nothing
+end
+
+"""
+    Compute the propagator matrix for generic Hubbard Model 
+    (spin decomposition is used, up and down parts are different)
+"""
+function imagtime_propagator!(
+    B₊::AbstractMatrix{T}, B₋::AbstractMatrix{T},
+    σ::AbstractArray{Int}, system::GenericHubbard;
+    useFirstOrderTrotter::Bool = system.useFirstOrderTrotter,
+    tmpmat = similar(B₊)
+) where {T<:Number}
+    Bₖ = system.Bk
+
+    auxfield_matrix_hubbard(
+        σ, system.auxfield, 
+        V₊=system.V₊, V₋=system.V₋,
+        isChargeHST = system.useChargeHST
+    )
+    V₊, V₋ = system.V₊, system.V₋
+
+    if useFirstOrderTrotter
+        mul!(B₊, Bₖ, Diagonal(V₊))
+        mul!(B₋, Bₖ, Diagonal(V₋))
+    else
+        mul!(tmpmat, Diagonal(V₊), Bₖ)
+        mul!(B₊, Bₖ, tmpmat)
+        
+        mul!(tmpmat, Diagonal(V₋), Bₖ)
+        mul!(B₋, Bₖ, tmpmat)
+    end
+
+    return nothing
+end
+
+"""
+    Compute the propagator matrix for generic Hubbard Model
+    (charge decomposition is used, up and down parts are the same)
+"""
+function imagtime_propagator!(
+    B::AbstractMatrix{T},
+    σ::AbstractArray{Int}, system::GenericHubbard;
+    useFirstOrderTrotter::Bool = system.useFirstOrderTrotter,
+    tmpmat = similar(B₊)
+) where {T<:Number}
+    Bₖ = system.Bk
+
+    auxfield_matrix_hubbard(
+        σ, system.auxfield, 
+        V₊=system.V₊, V₋=system.V₋,
+        isChargeHST = system.useChargeHST
+    )
+    V₊ = system.V₊
+
+    if useFirstOrderTrotter
+        mul!(B, Bₖ, Diagonal(V₊))
+    else
+        mul!(tmpmat, Diagonal(V₊), Bₖ)
+        mul!(B, Bₖ, tmpmat)
     end
 
     return nothing
