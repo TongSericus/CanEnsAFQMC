@@ -2,6 +2,9 @@
     Generate matrices for constructing the propagator
 """
 
+#################################
+### One-body kinetic matrices ###
+#################################
 function hopping_matrix_Hubbard_1d(
     L::Int, t::Float64;
     isOBC::Bool = true
@@ -48,7 +51,9 @@ function hopping_matrix_Hubbard_2d(Lx::Int, Ly::Int64, t::Float64)
     return T
 end
 
-### Auxiliary-field Matrix ###
+################################
+### Auxiliary-field matrices ###
+################################
 """
     auxfield_matrix_hubbard(σ, auxfield)
     
@@ -79,48 +84,9 @@ function auxfield_matrix_hubbard(
     return V₊, V₋
 end
 
-function singlestep_matrix(
-    σ::AbstractArray{Int64}, system::Hubbard;
-    useFirstOrderTrotter::Bool = system.useFirstOrderTrotter
-)
-    """
-    Compute B = exp(-ΔτK/2) * exp(-ΔτV(σ)) * exp(-ΔτK/2)
-    """
-    afmat_up, afmat_dn = auxfield_matrix_hubbard(σ, system.auxfield)
-
-    if useFirstOrderTrotter
-        B = [system.Bkf * Diagonal(afmat_up), system.Bkf * Diagonal(afmat_dn)]
-    else
-        B = [system.Bk * Diagonal(afmat_up) * system.Bk, system.Bk * Diagonal(afmat_dn) * system.Bk]
-    end
-    
-    return B
-end
-
-function singlestep_matrix!(
-    Bup::AbstractMatrix{T}, Bdn::AbstractMatrix{T}, σ::AbstractArray{Int64}, system::Hubbard;
-    useFirstOrderTrotter::Bool = system.useFirstOrderTrotter,
-    tmpmat = similar(Bup)
-) where {T<:Number}
-    """
-    Compute B = exp(-ΔτK/2) * exp(-ΔτV(σ)) * exp(-ΔτK/2) in-place
-    """
-    afmat_up, afmat_dn = auxfield_matrix_hubbard(σ, system.auxfield)
-
-    if useFirstOrderTrotter
-        mul!(Bup, system.Bkf, Diagonal(afmat_up))
-        mul!(Bdn, system.Bkf, Diagonal(afmat_dn))
-    else
-        mul!(tmpmat, Diagonal(afmat_up), system.Bk)
-        mul!(Bup, system.Bk, tmpmat)
-        
-        mul!(tmpmat, Diagonal(afmat_dn), system.Bk)
-        mul!(Bdn, system.Bk, tmpmat)
-    end
-
-    return nothing
-end
-
+####################################################
+### Combined matrix -- imaginary time propagator ###
+####################################################
 """
     Compute the propagator matrix for generic Hubbard Model 
     (spin decomposition is used, up and down parts are different)

@@ -31,6 +31,64 @@ end
 """
 function compute_Metropolis_ratio(
     system::System, walker::Walker, σ::AbstractArray{Int}, 
+    F::LDR{T,E}
+) where {T,E}
+    weight = walker.weight
+    weight′ = walker.weight′
+    sgn′ = walker.sign′
+
+    ws = walker.ws
+    Bτ = walker.Bτ.B[1]
+
+    imagtime_propagator!(Bτ, σ, system, tmpmat=ws.M)
+
+    L = ws.M′
+    mul!(L, Bτ, F.L)
+    M = LDR(L, F.d, F.R)
+    weight′[1], sgn′[1] = compute_pf(M, system.N[1], P=walker.P)
+    
+    weight′[2] = weight′[1]
+    sgn′[2] = conj(sgn′[1])
+
+    r = exp(sum(weight′) - sum(weight))
+
+    return r
+end
+
+"""
+    compute_Metropolis_ratio(...)
+"""
+function compute_Metropolis_ratio(
+    system::System, walker::Walker, σ::AbstractArray{Int}, M::LDRLowRank{T,E}
+) where {T,E}
+    weight = walker.weight
+    weight′ = walker.weight′
+    sgn′ = walker.sign′
+
+    ws = walker.ws
+    Bτ = walker.Bτ.B[1]
+    F = M.F
+
+    imagtime_propagator!(Bτ, σ, system, tmpmat=ws.M)
+
+    L = ws.M′
+    @views mul!(L[:, M.t[]], Bτ, F.L[:, M.t[]])
+    M = LDRLowRank(LDR(L, F.d, F.R), M.N, M.ϵ, M.t)
+    weight′[1], sgn′[1] = compute_pf(M, P=walker.P)
+    
+    weight′[2] = weight′[1]
+    sgn′[2] = conj(sgn′[1])
+
+    r = exp(sum(weight′) - sum(weight))
+
+    return r
+end
+
+"""
+    compute_Metropolis_ratio(...)
+"""
+function compute_Metropolis_ratio(
+    system::System, walker::Walker, σ::AbstractArray{Int}, 
     F::Vector{LDR{T,E}}
 ) where {T,E}
     weight = walker.weight
