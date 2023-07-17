@@ -1,299 +1,51 @@
 """
     Metropolis Sampling (MCMC) (for different factorizations)
 """
-### UDR(deleted) ###
-function compute_PF(
-    F::LDR{T, E}, N::Int64;
-    Ns = length(F.d),
-    PMat = zeros(ComplexF64, Ns + 1, Ns)
-) where {T, E}
-    λ = eigvals(F)
-    return pf_recursion(λ, N, P=PMat)
-end
 
+function sweep!(system::System, qmc::QMC, walker::Walker; loop_number::Int = 1)
+    if system.useChargeHST || qmc.forceSymmetry # charge decomposition
+        return nothing
+    else                                        # spin decomposition
+        for i in 1 : loop_number
+            sweep!_asymmetric(system, qmc, walker, direction=1)
+            sweep!_asymmetric(system, qmc, walker, direction=2)
+        end
 
-### UDT ###
-function compute_PF(
-    F::UDT{T}, N::Int64;
-    Ns = length(F.D),
-    PMat = zeros(ComplexF64, Ns + 1, Ns)
-) where T
-    λ = eigvals(F)
-    return @views pf_recursion(λ, N, P = PMat[N + 1, :])
-end
-
-function calc_trial(
-    σ::AbstractArray{Int64}, system::System, P::Matrix{Tp}, F1::UDT{T}, F2::UDT{T}
-) where {T<:Number, Tp<:Number}
-    """
-    Compute the weight of a trial configuration using a potential repartition scheme
-    """
-    weight_new = zeros(T, 2)
-    sgn_new = zeros(Tp, 2)
-    Btmp = singlestep_matrix(σ, system)
-
-    Utmp = Btmp[1] * F1.U
-    Ftmp = UDT(Utmp, F1.D, F1.T)
-    weight_new[1], sgn_new[1] = compute_PF(Ftmp, system.N[1], PMat=P)
-    
-    Utmp = Btmp[2] * F2.U
-    Ftmp = UDT(Utmp, F2.D, F2.T)
-    weight_new[2], sgn_new[2] = compute_PF(Ftmp, system.N[2], PMat=P)
-
-    return weight_new, sgn_new, Btmp
-end
-
-function global_flip!(
-    system::System, walker::Walker,
-    σ::AbstractArray, P::Matrix{Tp},
-    F1::UDT{T}, Bl1::AbstractMatrix{Tm}, 
-    F2::UDT{T}, Bl2::AbstractMatrix{Tm}
-) where {Tp<:Number, T<:Number, Tm<:Number}
-    """
-    Select a fraction of sites and flip their spins
-    """
-    weight_old = walker.weight
-    sgn_old = walker.sign
-
-    σ_flip = 2 * (rand(system.V) .< 0.5) .- 1
-    σ .*= σ_flip
-    weight_new, sgn_new, Bltmp = calc_trial(σ, system, P, F1, F2)
-
-    # accept ratio
-    r = exp(sum(weight_new) - sum(weight_old))
-    if rand() < min(1, r)
-        copyto!(weight_old, weight_new)
-        copyto!(sgn_old, sgn_new)
-
-        Bl1 .= Bltmp[1]
-        Bl2 .= Bltmp[2]
-    else
-        σ .*= σ_flip
-    end
-
-    return nothing
-end
-
-function update_cluster!(
-    walker::Walker{Tw, Ts, Tf, UDT{Tf}, E, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDT{T}, F2::UDT{T}
-) where {Tw, Ts, Tf, E, C, T}
-    """
-    Update the propagation matrices of size equaling to the stablization interval
-    """
-    k = qmc.K_interval[cidx]
-    K = qmc.K
-    P = walker.tempdata.P
-    Bl = walker.tempdata.cluster.B
-    cluster = walker.cluster
-
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    R1 *= cluster.B[cidx]
-    R2 *= cluster.B[K + cidx]
-
-    for i in 1 : k
-        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
-        R1 *= inv(Bl[i])
-        R2 *= inv(Bl[k + i])
-
-        global_flip!(
-            system, walker, σ, P,
-            UDT(U1, D1, R1), Bl[i],
-            UDT(U2, D2, R2), Bl[k + i]
-        )
-
-        U1 = Bl[i] * U1
-        U2 = Bl[k + i] * U2
-    end
-
-    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
-    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
-
-    return nothing
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{Tw, Ts, Tf, E, UDT{Tf}, C}
-) where {Tw, Ts, Tf, E, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    Ns = system.V
-    K = qmc.K
-
-    cluster = walker.cluster
-    tempdata = walker.tempdata
-    tmpL = tempdata.FC.B
-    tmpR = tempdata.Fτ
-    tmpM = tempdata.FM
-
-    for cidx in 1 : K
-        QR_merge!(tmpM[1], tmpR[1], tmpL[cidx])
-        QR_merge!(tmpM[2], tmpR[2], tmpL[K + cidx])
-        update_cluster!(
-            walker, system, qmc, cidx, tmpM[1], tmpM[2]
-        )
-
-        copyto!(tmpL[cidx], tmpR[1])
-        copyto!(tmpL[K + cidx], tmpR[2])
-
-        tmpR[1] = QR_lmul(cluster.B[cidx], tmpR[1])
-        tmpR[2] = QR_lmul(cluster.B[K + cidx], tmpR[2])
-    end
-
-    # save the propagation results
-    copyto!.(walker.F, tmpR)
-    # then reset Fτ to unit matrix
-    tmpR .= [UDT(Ns), UDT(Ns)]
-
-    return nothing
-end
-
-function update_cluster_reverse!(
-    walker::Walker{Tw, Ts, Tf, UDT{Tf}, E, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDT{T}, F2::UDT{T}
-) where {Tw, Ts, Tf, E, C, T}
-    """
-    Update the propagation matrices of size equaling to the stablization interval
-    """
-    k = qmc.K_interval[cidx]
-    K = qmc.K
-    
-    P = walker.tempdata.P
-    Bl = walker.tempdata.cluster.B
-    cluster = walker.cluster
-
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    U1 = cluster.B[cidx] * U1
-    U2 = cluster.B[K + cidx] * U2
-
-    for i in k : -1 : 1
-        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
-        U1 = inv(Bl[i]) * U1
-        U2 = inv(Bl[k + i]) * U2
-
-        global_flip!(
-            system, walker, σ, P,
-            UDT(U1, D1, R1), Bl[i],
-            UDT(U2, D2, R2), Bl[k + i]
-        )
-
-        R1 *= Bl[i]
-        R2 *= Bl[k + i]
-    end
-
-    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
-    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
-
-    return nothing
-end
-
-function reverse_sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{Tw, Ts, Tf, UDT{Tf}, E, C}
-) where {Tw, Ts, Tf, E, C}
-    """
-    Sweep the walker over the entire space-time lattice in the reverse order
-    """
-    Ns = system.V
-    K = qmc.K
-
-    cluster = walker.cluster
-    tempdata = walker.tempdata
-    tmpR = tempdata.FC.B
-    tmpL = tempdata.Fτ
-    tmpM = tempdata.FM
-
-    for cidx in K : -1 : 1
-        QR_merge!(tmpM[1], tmpR[cidx], tmpL[1])
-        QR_merge!(tmpM[2], tmpR[cidx + K], tmpL[2])
-        update_cluster_reverse!(
-            walker, system, qmc, cidx, tmpM[1], tmpM[2]
-        )
-
-        copyto!(tmpR[cidx], tmpL[1])
-        copyto!(tmpR[cidx + K], tmpL[2])
-
-        tmpL[1] = QR_rmul(tmpL[1], cluster.B[cidx])
-        tmpL[2] = QR_rmul(tmpL[2], cluster.B[K + cidx])
-    end
-
-    # save the propagation results
-    copyto!.(walker.F, tmpL)
-    # tnen reset Fτ to unit matrix
-    tmpL .= [UDT(Ns), UDT(Ns)]
-
-    return nothing
-end
-
-### UDT with low-rank truncation ###
-function compute_PF(
-    F::UDTlr{T}, N::Int64;
-    Ns = length(F.t[]),
-    PMat = zeros(ComplexF64, N + 1, Ns),
-    isRepart::Bool = false, rpThld::Float64 = 1e-4
-) where T
-    if isRepart
-        λocc, λf = repartition(F, rpThld)
-        λ = vcat(λf, λocc)
-        return pf_recursion(λ, N, P = PMat)
-    else
-        λ = eigvals(F)
-        return pf_recursion(λ, N, P = PMat)
+        return nothing
     end
 end
 
-function calc_trial(
-    σ::AbstractArray{Int64}, system::System, P::Matrix{Tp}, F1::UDTlr{T}, F2::UDTlr{T}
-) where {T<:Number, Tp<:Number}
-    """
-    Compute the weight of a trial configuration using a potential repartition scheme
-    """
-    weight_new = zeros(T, 2)
-    sgn_new = zeros(Tp, 2)
+##################################################
+##### Asymmetric Sweep for Spin HS Transform #####
+##################################################
+"""
+    local_flip!(...)
 
-    Btmp = singlestep_matrix(σ, system)
-
-    @views Utmp = Btmp[1] * F1.U[:, F1.t[]]
-    Ftmp = UDTlr(Utmp, F1.D, F1.T, F1.t)
-    weight_new[1], sgn_new[1] = compute_PF(Ftmp, system.N[1], PMat=P)
-    
-    @views Utmp = Btmp[2] * F2.U[:, F2.t[]]
-    Ftmp = UDTlr(Utmp, F2.D, F2.T, F2.t)
-    weight_new[2], sgn_new[2] = compute_PF(Ftmp, system.N[2], PMat=P)
-
-    return weight_new, sgn_new, Btmp
-end
-
+    Metropolis test by flipping a single spin
+"""
 function local_flip!(
-    system::System, walker::Walker,
-    σ::AbstractArray, P::AbstractMatrix{Tp},
-    F1::UDTlr{T}, Bl1::AbstractMatrix{Tm}, 
-    F2::UDTlr{T}, Bl2::AbstractMatrix{Tm}
-) where {Tp<:Number, T<:Number, Tm<:Number}
-    """
-    Flip the spins site by site
-    """
-    weight_old = walker.weight
-    sgn_old = walker.sign
+    system::System, qmc::QMC, walker::Walker,
+    σ::AbstractArray, Bl::Vector{Tb}
+) where {Tb<:AbstractMatrix}
+    weight = walker.weight
+    weight′ = walker.weight′
+    sgn = walker.sign
+    sgn′ = walker.sign′
+    M = walker.FM
+    Bτ = walker.Bτ.B
 
     for i in 1 : system.V
         σ[i] *= -1
-        weight_new, sgn_new, Bltmp = calc_trial(σ, system, P, F1, F2)
+        r = compute_Metropolis_ratio(system, walker, σ, M)
+        qmc.saveRatio && push!(walker.tmp_r, r)
+        u = qmc.useHeatbath ? r/(1+r) : r
 
-        # accept ratio
-        r = exp(sum(weight_new) - sum(weight_old))
-        if rand() < min(1, r)
-            copyto!(weight_old, weight_new)
-            copyto!(sgn_old, sgn_new)
+        if rand() < u
+            copyto!(weight, weight′)
+            copyto!(sgn, sgn′)
 
-            copyto!(Bl1, Bltmp[1])
-            copyto!(Bl2, Bltmp[2])
+            copyto!(Bl[1], Bτ[1])
+            copyto!(Bl[2], Bτ[2])
         else
             # revert the change
             σ[i] *= -1
@@ -303,198 +55,259 @@ function local_flip!(
     return nothing
 end
 
-function global_flip!(
-    system::System, walker::Walker,
-    σ::AbstractArray, P::AbstractMatrix{Tp},
-    F1::UDTlr{T}, Bl1::AbstractMatrix{Tm}, 
-    F2::UDTlr{T}, Bl2::AbstractMatrix{Tm}
-) where {Tp<:Number, T<:Number, Tm<:Number}
-    """
-    Select a fraction of sites and flip their spins
-    """
-    weight_old = walker.weight
-    sgn_old = walker.sign
+"""
+    cluster_flip!(...)
 
-    σ_flip = 2 * (rand(system.V) .< 0.5) .- 1
-    σ .*= σ_flip
-    weight_new, sgn_new, Bltmp = calc_trial(σ, system, P, F1, F2)
+    Metropolis test by flipping a cluster of sites
+"""
+function cluster_flip!(
+    system::System, qmc::QMC, walker::Walker,
+    σ::AbstractArray, Bl::Vector{Tb}
+) where {Tb<:AbstractMatrix}
+    weight = walker.weight
+    weight′ = walker.weight′
+    sgn = walker.sign
+    sgn′ = walker.sign′
+    M = walker.FM
+    Bτ = walker.Bτ.B
 
-    # accept ratio
-    r = exp(sum(weight_new) - sum(weight_old))
-    if rand() < min(1, r)
-        copyto!(weight_old, weight_new)
-        copyto!(sgn_old, sgn_new)
+    for i in qmc.cluster_list
+        σ_flip = 2 * (rand(length(i)) .< 0.5) .- 1
+        @views @. σ[i] *= σ_flip
 
-        copyto!(Bl1, Bltmp[1])
-        copyto!(Bl2, Bltmp[2])
-    else
-        # revert the change
-        σ .*= σ_flip
+        r = compute_Metropolis_ratio(system, walker, σ, M)
+        qmc.saveRatio && push!(walker.tmp_r, r)
+        u = qmc.useHeatbath ? r/(1+r) : r
+
+        if rand() < u
+            copyto!(weight, weight′)
+            copyto!(sgn, sgn′)
+
+            copyto!(Bl[1], Bτ[1])
+            copyto!(Bl[2], Bτ[2])
+        else
+            # revert the change
+            @views @. σ[i] *= σ_flip
+        end
     end
 
     return nothing
 end
 
-function update_cluster!(
-    walker::Walker{Tw, Ts, Tf, UDTlr{Tf}, E, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {Tw, Ts, Tf, E, C, T}
-    """
+"""
+    update_cluster!_asymmetric(...)
+
     Update the propagation matrices of size equaling to the stablization interval
-    """
+"""
+function update_cluster!_asymmetric(
+    system::System, qmc::QMC, walker::Walker{T, LDR{T,E}}, cidx::Int64;
+    direction::Int = 1
+) where {T,E}
     k = qmc.K_interval[cidx]
     K = qmc.K
     
-    P = walker.tempdata.P
-    Bl = walker.tempdata.cluster.B
-    cluster = walker.cluster
-
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    R1 *= cluster.B[cidx]
-    R2 *= cluster.B[K + cidx]
-
-    for i in 1 : k
-        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
-        R1 *= inv(Bl[i])
-        R2 *= inv(Bl[k + i])
-
-        local_flip!(
-            system, walker, σ, P,
-            UDTlr(U1, D1, R1, F1.t), Bl[i],
-            UDTlr(U2, D2, R2, F2.t), Bl[k + i]
-        )
-
-        U1 = Bl[i] * U1
-        U2 = Bl[k + i] * U2
-    end
-
-    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
-    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
-
-    return nothing
-end
-
-function sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{Tw, Ts, Tf, UDTlr{Tf}, E, C}
-) where {Tw, Ts, Tf, E, C}
-    """
-    Sweep the walker over the entire space-time lattice
-    """
-    N = system.N
-    K = qmc.K
-    ϵ = qmc.lrThld
-
     ws = walker.ws
+    F = walker.FM
+    Bl = walker.Bl.B
+    Bc = walker.Bc.B
 
-    cluster = walker.cluster
-    tempdata = walker.tempdata
-    tmpL = tempdata.FC.B
-    tmpR = tempdata.Fτ
-    tmpM = tempdata.FM
+    L₊, _, R₊ = F[1]
+    L₋, _, R₋ = F[2]
 
-    for cidx in 1 : K
-        mul!(tmpM[1], tmpR[1], tmpL[cidx], N[1], ϵ, ws)
-        mul!(tmpM[2], tmpR[2], tmpL[K + cidx], N[2], ϵ, ws)
-        update_cluster!(
-            walker, system, qmc, cidx, tmpM[1], tmpM[2]
-        )
+    direction == 1 ? begin
+            slice = collect(1:k)
+            # compute R <- R * Bc in-place
+            rmul!(R₊, Bc[cidx], ws.M)
+            rmul!(R₋, Bc[K+cidx], ws.M)
+        end :
+        begin
+            slice = collect(k:-1:1)
+            # compute L <- Bc * L in-place
+            lmul!(Bc[cidx], L₊, ws.M)
+            lmul!(Bc[K+cidx], L₋, ws.M)
+        end
 
-        copyto!(tmpL[cidx], tmpR[1])
-        copyto!(tmpL[K + cidx], tmpR[2])
+    for i in slice
+        σ = @view walker.auxfield[:, (cidx-1) * qmc.stab_interval + i]
+        imagtime_propagator!(Bl[i], Bl[k+i], σ, system; tmpmat=ws.M)
+        direction == 1 ? begin
+            # compute R <- R * Bl⁻¹ in-place
+            rmul_inv!(R₊, Bl[i], ws)
+            rmul_inv!(R₋, Bl[k+i], ws)
+        end :
+        begin
+            # compute L <- Bl⁻¹ * L in-place
+            lmul_inv!(Bl[i], L₊, ws)
+            lmul_inv!(Bl[k+i], L₋, ws)
+        end
 
-        lmul!(cluster.B[cidx], tmpR[1], N[1], ϵ, ws)
-        lmul!(cluster.B[K + cidx], tmpR[2], N[2], ϵ, ws)
+        qmc.useClusterUpdate ? 
+            cluster_flip!(
+                system, qmc, walker, σ, [Bl[i], Bl[k+i]]
+            ) :
+            local_flip!(
+                system, qmc, walker, σ, [Bl[i], Bl[k+i]]
+            )
+
+        direction == 1 ? begin
+            # compute L <- Bl * L in-place
+            lmul!(Bl[i], L₊, ws.M)
+            lmul!(Bl[k+i], L₋, ws.M)
+        end :
+        begin
+            # compute R <- R * Bl in-place
+            rmul!(R₊, Bl[i], ws.M)
+            rmul!(R₋, Bl[k+i], ws.M)
+        end
     end
 
-    # save the propagation results
-    copyto!.(walker.F, tmpR)
-    # then reset Fτ to unit matrix
-    reset!.(tmpR)
+    @views prod_cluster!(Bc[cidx], Bl[k:-1:1], ws.M)
+    @views prod_cluster!(Bc[K+cidx], Bl[2*k:-1:k+1], ws.M)
 
     return nothing
 end
 
-function update_cluster_reverse!(
-    walker::Walker{Tw, Ts, Tf, UDTlr{Tf}, E, C}, system::System, qmc::QMC, 
-    cidx::Int64, F1::UDTlr{T}, F2::UDTlr{T}
-) where {Tw, Ts, Tf, E, C, T}
-    """
+"""
+    update_cluster!_asymmetric(...)
+
     Update the propagation matrices of size equaling to the stablization interval
-    """
+"""
+function update_cluster!_asymmetric(
+    system::System, qmc::QMC, walker::Walker{T, LDRLowRank{T,E}}, cidx::Int64;
+    direction::Int = 1
+) where {T,E}
     k = qmc.K_interval[cidx]
     K = qmc.K
     
-    P = walker.tempdata.P
-    Bl = walker.tempdata.cluster.B
-    cluster = walker.cluster
+    ws = walker.ws
+    M = walker.FM
+    Bl = walker.Bl.B
+    Bc = walker.Bc.B
 
-    U1, D1, R1 = F1
-    U2, D2, R2 = F2
-    U1 = cluster.B[cidx] * U1
-    U2 = cluster.B[K + cidx] * U2
+    L₊, _, R₊ = M[1].F
+    L₋, _, R₋ = M[2].F
 
-    for i in k : -1 : 1
-        σ = @view walker.auxfield[:, (cidx - 1) * qmc.stab_interval + i]
-        singlestep_matrix!(Bl[i], Bl[k + i], σ, system, tmpmat = walker.ws.M)
-        U1 = inv(Bl[i]) * U1
-        U2 = inv(Bl[k + i]) * U2
+    direction == 1 ? begin
+            slice = collect(1:k)
+            # compute R <- R * Bc in-place
+            rmul!(R₊, Bc[cidx], ws.M)
+            rmul!(R₋, Bc[K+cidx], ws.M)
+        end :
+        begin
+            slice = collect(k:-1:1)
+            # compute L <- Bc * L in-place
+            lmul!(Bc[cidx], L₊, ws.M)
+            lmul!(Bc[K+cidx], L₋, ws.M)
+        end
 
-        local_flip!(
-            system, walker, σ, P,
-            UDTlr(U1, D1, R1, F1.t), Bl[i],
-            UDTlr(U2, D2, R2, F2.t), Bl[k + i]
-        )
+    for i in slice
+        σ = @view walker.auxfield[:, (cidx-1) * qmc.stab_interval + i]
+        imagtime_propagator!(Bl[i], Bl[k+i], σ, system, tmpmat=ws.M)
+        direction == 1 ? begin
+            # compute R <- R * Bl⁻¹ in-place
+            rmul_inv!(R₊, Bl[i], ws)
+            rmul_inv!(R₋, Bl[k+i], ws)
+        end :
+        begin
+            # compute L <- Bl⁻¹ * L in-place
+            lmul_inv!(Bl[i], L₊, ws)
+            lmul_inv!(Bl[k+i], L₋, ws)
+        end
 
-        R1 *= Bl[i]
-        R2 *= Bl[k + i]
+        qmc.useClusterUpdate ? 
+            cluster_flip!(
+                system, qmc, walker, σ, [Bl[i], Bl[k+i]]
+            ) :
+            local_flip!(
+                system, qmc, walker, σ, [Bl[i], Bl[k+i]]
+            )
+
+        direction == 1 ? begin
+            # compute L <- Bl * L in-place
+            lmul!(Bl[i], L₊, ws.M)
+            lmul!(Bl[k+i], L₋, ws.M)
+        end :
+        begin
+            # compute R <- R * Bl in-place
+            rmul!(R₊, Bl[i], ws.M)
+            rmul!(R₋, Bl[k+i], ws.M)
+        end
     end
 
-    @views copyto!(cluster.B[cidx], prod(Bl[k:-1:1]))
-    @views copyto!(cluster.B[K + cidx], prod(Bl[2*k:-1:k+1]))
+    @views prod_cluster!(Bc[cidx], Bl[k:-1:1], ws.M)
+    @views prod_cluster!(Bc[K+cidx], Bl[2*k:-1:k+1], ws.M)
 
     return nothing
 end
 
-function reverse_sweep!(
-    system::System, qmc::QMC, 
-    walker::Walker{Tw, Ts, Tf, UDTlr{Tf}, E, C}
-) where {Tw<:Number, Ts<:Number, Tf<:Number, E, C}
-    """
-    Sweep the walker over the entire space-time lattice in the reverse order
-    """
-    N = system.N
+"""
+    sweep!_asymmetric(...)
+"""
+function sweep!_asymmetric(
+    system::System, qmc::QMC, walker::Walker;
+    direction::Int = 1
+)
     K = qmc.K
-    ϵ = qmc.lrThld
-
     ws = walker.ws
 
-    cluster = walker.cluster
-    tempdata = walker.tempdata
-    tmpR = tempdata.FC.B
-    tmpL = tempdata.Fτ
-    tmpM = tempdata.FM
+    direction == 1 ? (
+            tmpL = walker.FC.B;
+            tmpR = walker.Fτ
+        ) : 
+        (
+            tmpL = walker.Fτ;
+            tmpR = walker.FC.B
+        )
+    tmpM = walker.FM
+    Bc = walker.Bc.B
 
-    for cidx in K : -1 : 1
-        mul!(tmpM[1], tmpR[cidx], tmpL[1], N[1], ϵ, ws)
-        mul!(tmpM[2], tmpR[cidx + K], tmpL[2], N[2], ϵ, ws)
-        update_cluster_reverse!(
-            walker, system, qmc, cidx, tmpM[1], tmpM[2]
+    # propagate from 0 to β
+    direction == 1 && begin
+        for cidx in 1:K
+            mul!(tmpM[1], tmpR[1], tmpL[cidx], ws)
+            mul!(tmpM[2], tmpR[2], tmpL[K+cidx], ws)
+            update_cluster!_asymmetric(
+                system, qmc, walker, cidx, direction=1
+            )
+
+            copyto!(tmpL[cidx], tmpR[1])
+            copyto!(tmpL[K+cidx], tmpR[2])
+
+            lmul!(Bc[cidx], tmpR[1], ws)
+            lmul!(Bc[K+cidx], tmpR[2], ws)
+        end
+
+        # save the propagation results
+        copyto!(walker.F[1], tmpR[1])
+        copyto!(walker.F[2], tmpR[2])
+        # then reset Fτ to unit matrix
+        reset!(tmpR[1])
+        reset!(tmpR[2])
+
+        return nothing 
+    end
+
+    # propagate from β to 0
+    for cidx in K:-1:1
+        mul!(tmpM[1], tmpR[cidx], tmpL[1], ws)
+        mul!(tmpM[2], tmpR[cidx+K], tmpL[2], ws)
+        update_cluster!_asymmetric(
+            system, qmc, walker, cidx, direction=2
         )
 
         copyto!(tmpR[cidx], tmpL[1])
-        copyto!(tmpR[cidx + K], tmpL[2])
+        copyto!(tmpR[cidx+K], tmpL[2])
 
-        rmul!(tmpL[1], cluster.B[cidx], N[1], ϵ, ws)
-        rmul!(tmpL[2], cluster.B[K + cidx], N[2], ϵ, ws)
+        rmul!(tmpL[1], Bc[cidx], ws)
+        rmul!(tmpL[2], Bc[K+cidx], ws)
     end
 
     # save the propagation results
-    copyto!.(walker.F, tmpL)
+    copyto!(walker.F[1], tmpL[1])
+    copyto!(walker.F[2], tmpL[2])
     # then reset Fτ to unit matrix
-    reset!.(tmpL)
+    reset!(tmpL[1])
+    reset!(tmpL[2])
 
     return nothing
 end
