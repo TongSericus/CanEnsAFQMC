@@ -6,15 +6,19 @@
     N -> desired particle number (number of recursions)
     λ -> exponentiated spectrum, i.e., exp(-βϵ)
 """
-function pf_recursion(
+
+"""
+    compute_pf_recursion(λ::AbstractVector{T}, N::Int)
+
+    Given a exponentiated spectrum λ = exp(-βϵ), compute the N-particle
+    partition function recursively
+"""
+function compute_pf_recursion(
     λ::AbstractVector{T}, N::Int;
     isReal::Bool = false,
     Ns = length(λ),
     P::AbstractMatrix{Tp} = zeros(eltype(λ), N + 1, Ns)
 ) where {T, Tp}
-    """
-    Recursive calculation of the partition function
-    """
     isReal || (λ = complex(λ))
 
     N == 0 && return convert(T, 0.0), 1.0
@@ -53,7 +57,7 @@ function pf_recursion(
     return abslogZ, sgnlogZ
 end
 
-function pf_recursion(
+function compute_pf_recursion(
     λ::Vector{T}, N::Int, ϵ::Float64;
     isReal::Bool = false,
     Ns = length(λ),
@@ -97,7 +101,7 @@ function pf_recursion(
     return abslogZ, sgnlogZ
 end
 
-function occ_recursion(
+function compute_occ_recursion(
     λ::Vector{T}, N::Int64;
     isReal::Bool = false,
     Ns::Int = length(λ),
@@ -121,15 +125,15 @@ function occ_recursion(
     N_below = sum(abs.(expβϵμ) .> 1)
 
     # separate recursions for occupancies of energy levels above/below the Fermi level
-    @views n_above = occ_recursion_rescaled(Ns, N, expβϵμ[1 : Ns - N_below], P[:, Ns])
-    @views n_below = occ_recursion_rescaled(Ns, N, expβϵμ[Ns - N_below + 1 : Ns], P[:, Ns], isReverse=true)
+    @views n_above = compute_occ_recursion_rescaled(Ns, N, expβϵμ[1 : Ns - N_below], P[:, Ns])
+    @views n_below = compute_occ_recursion_rescaled(Ns, N, expβϵμ[Ns - N_below + 1 : Ns], P[:, Ns], isReverse=true)
     # then concatenate
     n = vcat(n_above, n_below)
 
     return n
 end
 
-function occ_recursion_rescaled(
+function compute_occ_recursion_rescaled(
     Ns::Int64, N::Int64,
     expβϵμ::AbstractArray{Te}, P::AbstractArray{Tp};
     isReverse::Bool = false

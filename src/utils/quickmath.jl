@@ -87,25 +87,3 @@ function poissbino(
 
     return P
 end
-
-function sum_antidiagonal(A::AbstractMatrix)
-    """
-    Sum the matrix elements over anti-diagonal directions, including
-    all super/sub ones
-    """
-    row, col = size(A)
-    row == col || @error "Non-sqaure matrix"
-    v = Vector{eltype(A)}()
-
-    for i = -col + 1 : col - 1
-        if i < 0
-            push!(v, sum([A[j, col + 1 + i - j] for j = 1 : col + i]))
-        elseif i > 0
-            push!(v, sum([A[j, col + 1 + i - j] for j = 1 + i : col]))
-        else
-            push!(v, sum([A[j, col + 1 + i - j] for j = 1 : col]))
-        end
-    end
-
-    return v
-end
