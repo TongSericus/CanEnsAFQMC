@@ -127,8 +127,8 @@ function compute_Metropolis_ratio(
 ) where {T,E}
     # perform low-rank truncation
     ws = walker.ws
-    M[1].t[] = lowrank_truncation!(M[1], ws=ws)
-    M[2].t[] = lowrank_truncation!(M[2], ws=ws)
+    lowrank_truncation!(M[1], ws=ws)
+    lowrank_truncation!(M[2], ws=ws)
 
     weight = walker.weight
     weight′ = walker.weight′

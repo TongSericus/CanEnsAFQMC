@@ -35,7 +35,7 @@ function lowrank_truncation!(
     # truncation from below
     Nϵ = Ns
     s = dk[Nϵ]
-    while Nϵ > N && sqrt(s) < ϵ
+    while Nϵ > N+1 && sqrt(s) < ϵ
         Nϵ -= 1
         s += dk[Nϵ]
     end
@@ -101,7 +101,7 @@ end
 
 function LinearAlgebra.eigen(S::LDRLowRank{T,E}, ws::LDRWorkspace{T,E}) where {T,E}
     F = S.F
-    lowrank_truncation!(F, ws=ws)
+    lowrank_truncation!(S, ws=ws)
 
     Mat = @views ws.M[S.t[], S.t[]]
     @views mul!(Mat, F.R[S.t[], :], F.L[:, S.t[]])
