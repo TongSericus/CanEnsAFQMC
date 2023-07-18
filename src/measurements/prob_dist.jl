@@ -101,15 +101,16 @@ function compute_Fourier_weights(
     N = system.N[spin]
     Ns = sampler.Nft
     expiφ = sampler.expiφ
+    λ = sampler.λ[sampler.t[]]
     Z̃ₘ = sampler.Z̃ₘ
 
-    expβμ = fermilevel(sampler.λ, N)
+    expβμ = fermilevel(λ, N)
     βμN = N * log(expβμ)
     for i in 1:Ns
         sampler.expiφμ[i] = expiφ[i] / expβμ
     end
 
-    λ = sampler.λ / expβμ
+    λ = λ / expβμ
     for m in 1:Ns
         Z̃ₘ[m] = sum(log.(1 .+ expiφ[m]*λ)) + βμN - N*sampler.iφ[m]
     end

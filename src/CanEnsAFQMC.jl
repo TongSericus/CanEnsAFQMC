@@ -26,6 +26,9 @@ module CanEnsAFQMC
     include("./propagation/metropolis.jl")
 
     # Measurements
+    export DensityMatrix, update!
+    include("./measurements/density_matrix.jl")
+    #include("./measurements/corr_funcs.jl")
     export PnSampler, measure_Pn
     include("./measurements/prob_dist.jl")
 end
