@@ -1,4 +1,4 @@
-using CanEnsAFQMC, Test
+using CanEnsAFQMC, GenericLinearAlgebra, Test
 
 #######################
 ##### Test Module #####
@@ -261,4 +261,82 @@ end
     r = exp(sum(walker″.weight) - sum(walker′.weight))
     # and test if the correct Metropolis ratio is produced
     @test isapprox(r, walker.tmp_r[idx], atol=1e-5)
+end
+
+# use BigFloat to compute the matrix precisely
+BigMatrix(A::LDR) = big.(A.L) * Diagonal(big.(A.d)) * big.(A.R)
+
+@testset "CanEnsAFQMC_measurements" begin
+    Lx, Ly = 4, 4
+    T = hopping_matrix_Hubbard_2d(Lx, Ly, 1.0)
+
+    system = GenericHubbard(
+        # (Nx, Ny), (N_up, N_dn)
+        (Lx, Ly, 1), (8, 8),
+        # t, U
+        T, -6.0,
+        # μ
+        0.0,
+        # β, L
+        16.0, 160,
+        # data type of the system
+        sys_type=ComplexF64,
+        # if use charge decomposition
+        useChargeHST=false,
+        # if use first-order Trotteriaztion
+        useFirstOrderTrotter=false
+    )
+
+    qmc = QMC(
+        system,
+        # number of warm-ups, samples and measurement interval
+        nwarmups=512, nsamples=1024, measure_interval=6,
+        # stablization interval
+        stab_interval=10,
+        # use cluster update
+        useClusterUpdate=true,
+        # indices of lattice sites being simultaneously flipped
+        cluster_list=[collect(36*(i-1)+1:36*i) for i in 1:div(system.V,36)],
+        # enforce symmetry between two spin sectors
+        forceSymmetry=true,
+        # use low-rank approximation and set the threshold
+        isLowrank=true, lrThld=1e-6,
+        # debugging flag
+        saveRatio=true
+    )
+
+    walker = Walker(system, qmc)
+
+    Aidx = collect(1:5)
+
+    sampler = PnSampler(system, qmc, Aidx)
+    measure_Pn(system, walker, sampler, 1)
+
+    # compute Fourier transform in brutal force way
+    Ns = system.V+1
+    iφ = im * [2 *π*m / Ns for m = 1 : Ns]
+    expiφ = exp.(iφ)
+
+    H = BigMatrix(walker.F[1].F)
+    Pm = zeros(ComplexF64, length(Aidx)+1, Ns)
+    Zm = zeros(ComplexF64, Ns)
+    N = system.N[1]
+
+    for m in 1 : Ns
+        expiφm = expiφ[m]
+        Zm[m] = conj(expiφm)^N * det(I + expiφm*H)
+        Gm = expiφm*H / (I + expiφm*H)
+        GmA = Gm[Aidx, Aidx]
+        HA = GmA * inv(I - GmA)
+        ϵ = eigvals(HA, sortby=abs)
+        @views copyto!(Pm[:, m], CanEnsAFQMC.poissbino(ϵ)[:, end])
+    end
+
+    Pn = zeros(ComplexF64, length(Aidx)+1)
+    logZ = walker.weight[1] + log(walker.sign[1])
+    for i = 1 : length(Aidx)+1
+        Pn[i] = sum(Pm[i, :] .* exp.(log.(Zm) .- logZ)) / Ns
+    end
+
+    @test Pn ≈ sampler.Pn[:, 1]
 end

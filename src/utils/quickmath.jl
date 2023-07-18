@@ -32,6 +32,12 @@ function quick_rotation(expiφ::Vector{ComplexF64}, N::Int64, isConj::Bool = fal
     return conj(expiφ_rotated)
 end
 
+"""
+    poissbino(ϵ::Vector)
+
+    A regularized version of the recursive calculation for the Poisson binomial
+    distribution give the unnormalized spectrum ϵ
+"""
 function poissbino(
     ϵ::AbstractVector{T};
     Ns::Int64 = length(ϵ),
@@ -39,15 +45,6 @@ function poissbino(
     ν2::AbstractVector{T} = 1 ./ (1 .+ ϵ),
     P::AbstractMatrix{Tp} = zeros(eltype(ϵ), Ns + 1, Ns)
 ) where {T<:Number, Tp<:Number}
-    """
-    A regularized version of the recursive calculation for the Poisson binomial
-    distribution
-    For details on how this is employed in the canonical ensemble calculations,
-    see doi.org/10.1103/PhysRevResearch.2.043206
-
-    # Argument
-    ϵ -> eigenvalues
-    """
     # Initialization
     P[1, 1] = ν2[1]
     P[2, 1] = ν1[1]

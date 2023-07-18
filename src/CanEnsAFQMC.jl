@@ -25,4 +25,7 @@ module CanEnsAFQMC
     export sweep!, sweep!_asymmetric, sweep!_symmetric
     include("./propagation/metropolis.jl")
 
+    # Measurements
+    export PnSampler, measure_Pn
+    include("./measurements/prob_dist.jl")
 end

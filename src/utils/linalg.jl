@@ -25,3 +25,12 @@ Base.similar(S::LDR{T, E}) where {T, E} = ldr(S)
 
 # Diagonalization
 LinearAlgebra.eigvals(F::LDR{T, E}) where {T, E} = eigvals(Diagonal(F.d) * F.R * F.L, sortby = abs)
+LinearAlgebra.eigen(F::LDR{T, E}, ws::LDRWorkspace{T,E}) where {T, E} = let
+    Mat = ws.M
+    mul!(Mat, F.R, F.L)
+    lmul!(Diagonal(F.d), Mat)
+    λ, P = eigen(Mat, sortby = abs)
+    P = F.L * P
+    P⁻¹ = inv(P)
+    return λ, P, P⁻¹
+end
