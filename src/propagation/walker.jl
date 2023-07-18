@@ -73,11 +73,11 @@ function Walker(
         LDRLowRank(FC.B[K+1:end], N[2], ϵ, F_lowrank=FC_lowrank)
         FC = FC_lowrank
 
-        weight[1], sgn[1] = compute_pf(F[1])
-        weight[2], sgn[2] = compute_pf(F[2])
+        weight[1], sgn[1] = compute_pf(F[1], ws)
+        weight[2], sgn[2] = compute_pf(F[2], ws)
     else
-        weight[1], sgn[1] = compute_pf(F[1], N[1])
-        weight[2], sgn[2] = compute_pf(F[2], N[2])
+        weight[1], sgn[1] = compute_pf(F[1], N[1], ws)
+        weight[2], sgn[2] = compute_pf(F[2], N[2], ws)
     end
 
     P = zeros(ComplexF64, Ns+1, Ns)

@@ -5,16 +5,6 @@
 import StableLinearAlgebra as Slinalg
 import StableLinearAlgebra: mul!, lmul!, rmul!, rdiv!
 
-function lowrank_truncation(d::AbstractVector{T}, N::Int, ϵ::Float64) where T
-    Ns = length(d)
-    # truncation from below
-    Nϵ = N
-    while Nϵ < Ns && d[Nϵ+1] / d[Nϵ] > ϵ
-        Nϵ += 1
-    end
-    t = 1 : Nϵ
-end
-
 struct LDRLowRank{T<:Number, E<:AbstractFloat} <: Factorization{T}
     F::LDR{T,E}
     N::Int
@@ -22,9 +12,42 @@ struct LDRLowRank{T<:Number, E<:AbstractFloat} <: Factorization{T}
     t::Base.RefValue{UnitRange{Int}}
 end
 
-function LDRLowRank(F::LDR{T,E}, N::Int, ϵ::Float64) where {T,E}
-    t = lowrank_truncation(F.d, N, ϵ)
-    LDRLowRank(F, N, ϵ, Ref(t))
+function lowrank_truncation!(
+    M::LDRLowRank{T,E}; 
+    ws::LDRWorkspace{T,E} = ldr_workspace(M.F)
+) where {T,E}
+    F = M.F
+    N = M.N
+    ϵ = M.ϵ
+
+    d = F.d
+    R = F.R
+
+    dk = ws.v
+    Rk = ws.M
+    transpose!(Rk, R)
+
+    Ns = length(dk)
+    @inbounds for k in N : Ns
+        @views dk[k] = d[k] * sum(abs.(Rk[:, k]) .^ 2) / d[N]
+    end
+
+    # truncation from below
+    Nϵ = Ns
+    s = dk[Nϵ]
+    while Nϵ > N && sqrt(s) < ϵ
+        Nϵ -= 1
+        s += dk[Nϵ]
+    end
+
+    M.t[] = 1:Nϵ
+    return nothing
+end
+
+function LDRLowRank(F::LDR{T,E}, N::Int, ϵ::Float64; doTruncation::Bool = false) where {T,E}
+    M = LDRLowRank(F, N, ϵ, Ref(1:length(F.d)))
+    doTruncation && lowrank_truncation!(M)
+    return M
 end
 
 function LDRLowRank(
@@ -58,27 +81,65 @@ end
     F = S.F
     @views eigvals(Diagonal(F.d[S.t[]]) * F.R[S.t[], :] * F.L[:, S.t[]], sortby = abs) 
 end
+LinearAlgebra.eigvals(S::LDRLowRank, ws::LDRWorkspace) = let
+    F = S.F
+    Mat = @views ws.M[S.t[], S.t[]]
+    @views mul!(Mat, F.R[S.t[], :], F.L[:, S.t[]])
+    @views lmul!(Diagonal(F.d[S.t[]]), Mat)
+    # diagonalize
+    eigvals!(Mat, sortby = abs) 
+end
+
 LinearAlgebra.eigen(S::LDRLowRank) = let
     F = S.F
     λ, P = eigen(Diagonal(F.d[S.t[]]) * F.R[S.t[], :] * F.L[:, S.t[]], sortby = abs)
     Pₒ = F.L[:, S.t[]] * P
     X = (F.R * F.L)[S.t[], S.t[]] * P
-    Pₒ⁻¹ = inv(X) * F.L[S.t[], :]
+    Pₒ⁻¹ = inv(X) * F.R[S.t[], :]
     λ, Pₒ, Pₒ⁻¹
 end
 
-function lmul!(U::AbstractMatrix{T}, V::LDRLowRank{T,E}, ws::LDRWorkspace{T,E}) where {T, E}
+function LinearAlgebra.eigen(S::LDRLowRank{T,E}, ws::LDRWorkspace{T,E}) where {T,E}
+    F = S.F
+    lowrank_truncation!(F, ws=ws)
+
+    Mat = @views ws.M[S.t[], S.t[]]
+    @views mul!(Mat, F.R[S.t[], :], F.L[:, S.t[]])
+    @views lmul!(Diagonal(F.d[S.t[]]), Mat)
+
+    λₒ, P = eigen!(Mat, sortby = abs)
+
+    @views Pₒ = F.L[:, S.t[]] * P
+
+    RL = ws.M
+    mul!(RL, F.R, F.L)
+    X = @view ws.M″[S.t[], S.t[]]
+    @views mul!(X, RL[S.t[], S.t[]], P)
+    X⁻¹ = X
+    inv_lu!(X⁻¹, ws.lu_ws)
+    @views Pₒ⁻¹ = X⁻¹ * F.R[S.t[], :]
+
+    return λₒ, Pₒ, Pₒ⁻¹
+end
+
+function lmul!(
+    U::AbstractMatrix{T}, V::LDRLowRank{T,E}, ws::LDRWorkspace{T,E}; 
+    doTruncation::Bool = false
+) where {T, E}
     F = V.F
     lmul!(U, F, ws)
-    V.t[] = lowrank_truncation(F.d, V.N, V.ϵ)
+    doTruncation && (V.t[] = lowrank_truncation!(V))
 
     return nothing
 end
 
-function rmul!(U::LDRLowRank{T,E}, V::AbstractMatrix{T}, ws::LDRWorkspace{T,E}) where {T, E}
+function rmul!(
+    U::LDRLowRank{T,E}, V::AbstractMatrix{T}, ws::LDRWorkspace{T,E}; 
+    doTruncation::Bool = false
+) where {T, E}
     F = U.F
     rmul!(F, V, ws)
-    U.t[] = lowrank_truncation(F.d, U.N, U.ϵ)
+    doTruncation && (U.t[] = lowrank_truncation!(U))
 
     return nothing
 end
@@ -86,13 +147,14 @@ end
 function mul!(
     C::LDRLowRank{T,E}, 
     A::LDRLowRank{T,E}, B::LDRLowRank{T,E}, 
-    ws::LDRWorkspace{T,E}
+    ws::LDRWorkspace{T,E}; 
+    doTruncation::Bool = false
 ) where {T, E}
     M = C.F
     L = A.F
     R = B.F
     mul!(M, L, R, ws)
-    C.t[] = lowrank_truncation(M.d, C.N, C.ϵ)
+    doTruncation && (C.t[] = lowrank_truncation!(C))
 
     return nothing
 end

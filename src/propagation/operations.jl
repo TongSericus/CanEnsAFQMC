@@ -6,11 +6,11 @@
     compute_pf(...)
 """
 function compute_pf(
-    F::LDR{T, E}, N::Int64;
+    F::LDR{T, E}, N::Int64, ws::LDRWorkspace{T,E};
     Ns = length(F.d),
     P = zeros(ComplexF64, Ns+1, Ns)
 ) where {T, E}
-    λ = eigvals(F)
+    λ = eigvals(F, ws)
     return compute_pf_recursion(λ, N, P=P)
 end
 
@@ -18,11 +18,11 @@ end
     compute_pf(...)
 """
 function compute_pf(
-    M::LDRLowRank{T, E};
+    M::LDRLowRank{T, E}, ws::LDRWorkspace{T,E};
     Ns = length(M.F.d),
     P = zeros(ComplexF64, Ns+1, Ns)
 ) where {T, E}
-    λ = eigvals(M)
+    λ = eigvals(M, ws)
     return compute_pf_recursion(λ, M.N, P=P)
 end
 
@@ -45,7 +45,7 @@ function compute_Metropolis_ratio(
     L = ws.M′
     mul!(L, Bτ, F.L)
     M = LDR(L, F.d, F.R)
-    weight′[1], sgn′[1] = compute_pf(M, system.N[1], P=walker.P)
+    weight′[1], sgn′[1] = compute_pf(M, system.N[1], ws, P=walker.P)
     
     weight′[2] = weight′[1]
     sgn′[2] = conj(sgn′[1])
@@ -61,11 +61,14 @@ end
 function compute_Metropolis_ratio(
     system::System, walker::Walker, σ::AbstractArray{Int}, M::LDRLowRank{T,E}
 ) where {T,E}
+    # perform low-rank truncation
+    ws = walker.ws
+    lowrank_truncation!(M, ws=ws)
+
     weight = walker.weight
     weight′ = walker.weight′
     sgn′ = walker.sign′
 
-    ws = walker.ws
     Bτ = walker.Bτ.B[1]
     F = M.F
 
@@ -74,7 +77,7 @@ function compute_Metropolis_ratio(
     L = ws.M′
     @views mul!(L[:, M.t[]], Bτ, F.L[:, M.t[]])
     M = LDRLowRank(LDR(L, F.d, F.R), M.N, M.ϵ, M.t)
-    weight′[1], sgn′[1] = compute_pf(M, P=walker.P)
+    weight′[1], sgn′[1] = compute_pf(M, ws, P=walker.P)
     
     weight′[2] = weight′[1]
     sgn′[2] = conj(sgn′[1])
@@ -104,12 +107,12 @@ function compute_Metropolis_ratio(
     L₊ = ws.M′
     mul!(L₊, Bτ[1], F₊.L)
     M₊ = LDR(L₊, F₊.d, F₊.R)
-    weight′[1], sgn′[1] = compute_pf(M₊, system.N[1], P=walker.P)
+    weight′[1], sgn′[1] = compute_pf(M₊, system.N[1], ws, P=walker.P)
     
     L₋ = ws.M″
     mul!(L₋, Bτ[2], F₋.L)
     M₋ = LDR(L₋, F₋.d, F₋.R)
-    weight′[2], sgn′[2] = compute_pf(M₋, system.N[2], P=walker.P)
+    weight′[2], sgn′[2] = compute_pf(M₋, system.N[2], ws, P=walker.P)
 
     r = exp(sum(weight′) - sum(weight))
 
@@ -122,11 +125,15 @@ end
 function compute_Metropolis_ratio(
     system::System, walker::Walker, σ::AbstractArray{Int}, M::Vector{LDRLowRank{T,E}}
 ) where {T,E}
+    # perform low-rank truncation
+    ws = walker.ws
+    M[1].t[] = lowrank_truncation!(M[1], ws=ws)
+    M[2].t[] = lowrank_truncation!(M[2], ws=ws)
+
     weight = walker.weight
     weight′ = walker.weight′
     sgn′ = walker.sign′
 
-    ws = walker.ws
     Bτ = walker.Bτ.B
     F₊ = M[1].F
     F₋ = M[2].F
@@ -136,12 +143,12 @@ function compute_Metropolis_ratio(
     L₊ = ws.M′
     @views mul!(L₊[:, M[1].t[]], Bτ[1], F₊.L[:, M[1].t[]])
     M₊ = LDRLowRank(LDR(L₊, F₊.d, F₊.R), M[1].N, M[1].ϵ, M[1].t)
-    weight′[1], sgn′[1] = compute_pf(M₊, P=walker.P)
+    weight′[1], sgn′[1] = compute_pf(M₊, ws, P=walker.P)
     
     L₋ = ws.M″
     @views mul!(L₋[:, M[2].t[]], Bτ[2], F₋.L[:, M[2].t[]])
     M₋ = LDRLowRank(LDR(L₋, F₋.d, F₋.R), M[2].N, M[2].ϵ, M[2].t)
-    weight′[2], sgn′[2] = compute_pf(M₋, P=walker.P)
+    weight′[2], sgn′[2] = compute_pf(M₋, ws, P=walker.P)
 
     r = exp(sum(weight′) - sum(weight))
 

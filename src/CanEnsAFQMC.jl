@@ -15,7 +15,7 @@ module CanEnsAFQMC
     include("./utils/ce_recursion.jl")
     include("./utils/ce_projection.jl")
 
-    export LDRLowRank
+    export LDRLowRank, lowrank_truncation!
     include("./utils/linalg.jl")
     include("./utils/linalg_lowrank.jl")
 

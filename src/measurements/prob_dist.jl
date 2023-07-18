@@ -68,11 +68,23 @@ end
 function update!(
     sampler::PnSampler, walker::Walker{T, LDRLowRank{T,E}}, spin::Int
 ) where {T,E}
-    λ, P, P⁻¹ = eigen(walker.F[spin].F, walker.ws)
+    λ, P, P⁻¹ = eigen(walker.F[spin], walker.ws)
+    sampler.t[] = walker.F[spin].t[]
+    t = sampler.t[]
+    @views copyto!(sampler.λ[t], λ)
+    @views copyto!(sampler.P[:, t], P)
+    @views copyto!(sampler.P⁻¹[t, :], P⁻¹)
+
+    return nothing
+end
+
+function update!(
+    sampler::PnSampler, walker::Walker{T, LDR{T,E}}, spin::Int
+) where {T,E}
+    λ, P, P⁻¹ = eigen(walker.F[spin], walker.ws)
     copyto!(sampler.λ, λ)
     copyto!(sampler.P, P)
     copyto!(sampler.P⁻¹, P⁻¹)
-    sampler.t[] = walker.F[spin].t[]
 
     return nothing
 end
@@ -114,18 +126,19 @@ function Pn_estimator(
     tmpPn = sampler.tmpPn
 
     Aidx = sampler.Aidx
-    λ = sampler.λ
-    P = sampler.P
-    P⁻¹ = sampler.P⁻¹
+    t = sampler.t[]
+    λ = @view sampler.λ[t]
+    P = @view sampler.P[:, t]
+    P⁻¹ = @view sampler.P⁻¹[t, :]
     expiφμ = sampler.expiφμ
 
     for m in 1 : Ns
-        nₖφₘ = @view ws.M[:, 1]
+        nₖφₘ = @view ws.M[t, 1]
         @inbounds for i in eachindex(λ)
             nₖφₘ[i] = expiφμ[m]*λ[i] / (1 + expiφμ[m]*λ[i])
         end
 
-        GₐP⁻¹ = @view ws.M′[:, Aidx]
+        GₐP⁻¹ = @view ws.M′[t, Aidx]
         @views mul!(GₐP⁻¹, Diagonal(nₖφₘ), P⁻¹[:, Aidx])
         Gₐ = @view ws.M″[Aidx, Aidx]
         @views mul!(Gₐ, P[Aidx, :], GₐP⁻¹)
@@ -145,9 +158,8 @@ function Pn_estimator(
 end
 
 function measure_Pn(
-    system::System, walker::Walker{T, LDRLowRank{T,E}}, 
-    sampler::PnSampler, spin::Int
-) where {T,E}
+    system::System, walker::Walker, sampler::PnSampler, spin::Int
+)
 
     s = sampler.s_counter[]
     Lₐ = length(sampler.Aidx)

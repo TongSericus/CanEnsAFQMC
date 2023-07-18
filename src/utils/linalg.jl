@@ -24,12 +24,19 @@ Base.iterate(S::LDR, ::Val{:done}) = nothing
 Base.similar(S::LDR{T, E}) where {T, E} = ldr(S)
 
 # Diagonalization
-LinearAlgebra.eigvals(F::LDR{T, E}) where {T, E} = eigvals(Diagonal(F.d) * F.R * F.L, sortby = abs)
-LinearAlgebra.eigen(F::LDR{T, E}, ws::LDRWorkspace{T,E}) where {T, E} = let
+LinearAlgebra.eigvals(F::LDR) = eigvals(Diagonal(F.d) * F.R * F.L, sortby = abs)
+LinearAlgebra.eigvals(F::LDR, ws::LDRWorkspace) = let
+    Mat = @views ws.M
+    @views mul!(Mat, F.R, F.L)
+    @views lmul!(Diagonal(F.d), Mat)
+    # diagonalize
+    eigvals!(Mat, sortby = abs)
+end
+LinearAlgebra.eigen(F::LDR, ws::LDRWorkspace) = let
     Mat = ws.M
     mul!(Mat, F.R, F.L)
     lmul!(Diagonal(F.d), Mat)
-    λ, P = eigen(Mat, sortby = abs)
+    λ, P = eigen!(Mat, sortby = abs)
     P = F.L * P
     P⁻¹ = inv(P)
     return λ, P, P⁻¹
