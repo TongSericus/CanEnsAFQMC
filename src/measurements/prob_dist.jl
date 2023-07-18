@@ -89,6 +89,17 @@ function update!(
     return nothing
 end
 
+function update!(sampler::PnSampler, ρ::DensityMatrix)
+    sampler.t[] = ρ.t[]
+    t = sampler.t[]
+    @views copyto!(sampler.λ[t], ρ.λ)
+    @views copyto!(sampler.P[:, t], ρ.P)
+    @views copyto!(sampler.P⁻¹[t, :], ρ.P⁻¹)
+
+    copyto!(sampler.expiφμ, ρ.expiφμ)
+    copyto!(sampler.Z̃ₘ, ρ.Z̃ₘ)
+end
+
 """
     compute_Fourier_weights(...)
 
@@ -180,6 +191,28 @@ function measure_Pn(
         Z̃ₘ[m] = exp(Z̃ₘ[m] - logZ)
     end
     # reverse Fourier transform
+    for i = 1 : Lₐ+1
+        sampler.Pn[i, s] = sum(sampler.P̃n[i, :] .* Z̃ₘ) / Ns
+    end
+    
+    sampler.s_counter[] += 1
+
+    return nothing
+end
+
+function measure_Pn(sampler::PnSampler, ρ::DensityMatrix)
+
+    s = sampler.s_counter[]
+    Lₐ = length(sampler.Aidx)
+
+    # update the eigendecomposition
+    update!(sampler, ρ)
+    # compute frequency-dependent probabilities
+    Pn_estimator(sampler, walker.ws)
+
+    # reverse Fourier transform
+    Ns = sampler.Nft
+    Z̃ₘ = sampler.Z̃ₘ
     for i = 1 : Lₐ+1
         sampler.Pn[i, s] = sum(sampler.P̃n[i, :] .* Z̃ₘ) / Ns
     end

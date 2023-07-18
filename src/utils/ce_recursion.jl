@@ -58,7 +58,7 @@ function compute_pf_recursion(
 end
 
 function compute_pf_recursion(
-    λ::Vector{T}, N::Int, ϵ::Float64;
+    λ::AbstractVector{T}, N::Int, ϵ::Float64;
     isReal::Bool = false,
     Ns = length(λ),
     P::AbstractMatrix{Tp} = zeros(eltype(λ), N + 1, Ns)
@@ -102,7 +102,7 @@ function compute_pf_recursion(
 end
 
 function compute_occ_recursion(
-    λ::Vector{T}, N::Int64;
+    λ::AbstractVector{T}, N::Int64;
     isReal::Bool = false,
     Ns::Int = length(λ),
     P::AbstractMatrix{Tp} = zeros(eltype(λ), Ns + 1, Ns)

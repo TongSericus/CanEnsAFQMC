@@ -13,7 +13,6 @@ module CanEnsAFQMC
     # math functions and canonical ensemble projections
     include("./utils/quickmath.jl")
     include("./utils/ce_recursion.jl")
-    include("./utils/ce_projection.jl")
 
     export LDRLowRank, lowrank_truncation!
     include("./utils/linalg.jl")

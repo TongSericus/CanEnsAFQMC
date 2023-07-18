@@ -9,6 +9,10 @@ function add_r()
 end
 
 struct CorrFuncSampler
+    # all possible r vectors
+    r::Vector{Tuple{Int64, Int64}}
+
+    
 end
 
 function CorrFuncSampler(system::System)
