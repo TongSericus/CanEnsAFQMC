@@ -1,161 +1,225 @@
-struct TempMats{Tn, Tp}
-    D::AbstractMatrix{Tn}
-    ninj::AbstractMatrix{Tn}
-    P1::AbstractArray{Tp, 4}
-    P2::AbstractArray{Tp, 4}
+"""
+    One- and Two-body Density Matrices for Observable Measurements
+"""
+
+struct DensityMatrix{T,E}
+    # One-body RDM: <c_i^{+} cj>
+    ρ₁::Matrix{T}
+
+    ws::LDRWorkspace{ComplexF64,E}
+
+    # eigendecomposition
+    λ::Vector{ComplexF64}
+    P::Matrix{ComplexF64}
+    P⁻¹::Matrix{ComplexF64}
+    t::Base.RefValue{UnitRange{Int}}
+
+    # Fourier transform
+    Nft::Int
+    iφ::Vector{ComplexF64}
+    expiφ::Vector{ComplexF64}
+    expiφμ::Vector{ComplexF64}
+    Z̃ₘ::Vector{ComplexF64}   # Fourier weights
+    ρₘ::Array{ComplexF64, 3} # frequency-dependent 1-RDM
+    Gₘ::Array{ComplexF64, 3} # ρₘ with permuted dimension
 end
 
-struct DensityMatrices{T, Tn, Tp}
-    """
-        Density matrices
-        For two-body terms we just compute the elements along diagonal lines
-    """
-    # One-body: <c_i^{+} cj>
-    Do::Matrix{T}
-
-    # For two-body terms we only compute the elements along diagonal lines
-    # Two-body: <c_i^{+} ci c_j^{+} cj>
-    Dt::Matrix{T}
-
-    # Temporal data to avoid extra allocations
-    tmp::TempMats{Tn, Tp}
-end
-
-function DensityMatrices(system::System)
-    """
-    Initialize a DM
-    """
+function DensityMatrix(system::System; Nft::Int = system.V+1)
+    T = eltype(system.auxfield)
     Ns = system.V
 
-    system.isReal ? T = Float64 : T = ComplexF64
+    ρ₁ = zeros(T, Ns, Ns)
 
-    tmp = TempMats(
-        zeros(ComplexF64, Ns, Ns),
-        zeros(ComplexF64, Ns, Ns),
-        zeros(ComplexF64, Ns, Ns, Ns, Ns),
-        zeros(ComplexF64, Ns, Ns, Ns, Ns)
+    # eigendecomposition
+    λ = zeros(ComplexF64, Ns)
+    P = zeros(ComplexF64, Ns, Ns)
+    P⁻¹ = zeros(ComplexF64, Ns, Ns)
+    t = Ref(1:Ns)
+
+    ws = ldr_workspace(P)
+
+    # Fourier transform
+    iφ = im * [2*π*m / Nft for m = 1 : Nft]
+    expiφ = exp.(iφ)
+    expiφμ = zeros(ComplexF64, Nft)
+    Z̃ₘ = zeros(ComplexF64, Nft)
+    ρₘ = zeros(ComplexF64, Ns, Ns, Nft)
+    Gₘ = zeros(ComplexF64, Nft, Ns, Ns)
+
+    return DensityMatrix{T, eltype(ws.v)}(
+        ρ₁, ws,
+        λ, P, P⁻¹, t,
+        Nft, iφ, expiφ, expiφμ, Z̃ₘ, ρₘ, Gₘ
     )
-
-    DensityMatrices(
-        zeros(T, Ns, Ns),
-        zeros(T, Ns, Ns),
-        tmp
-    )
 end
 
-function fill_DM!(
-    DM::DensityMatrices{T, Tn, Tp}, F::UDTlr, N::Int64; 
-    isReal::Bool=true, computeTwoBody::Bool=true
-) where {T<:Number, Tn, Tp}
-    """
-    Compute the elements of one-/two-body density matrices
-    """
-    # One-body elements
-    mat = Diagonal(F.D) * F.T * F.U
-    λ, P = eigen!(mat, sortby=abs)
-    P = F.U * P
-    invP = inv(P)
+"""
+    compute_Fourier_weights(...)
 
-    ni = occ_recursion(λ, N)
-    mul!(DM.tmp.D, P, Diagonal(ni) * invP)
+    Compute the Fourier coefficients. Results are in the logrithmic form
+    to avoid numerical overflows
+"""
+function compute_Fourier_weights(
+    system::System, ρ::DensityMatrix, spin::Int
+)
+    N = system.N[spin]
+    Ns = ρ.Nft
+    expiφ = ρ.expiφ
+    λ = ρ.λ[ρ.t[]]
+    Z̃ₘ = ρ.Z̃ₘ
 
-    isReal ? copyto!(DM.Do, real(DM.tmp.D)) : copyto!(DM.Do, DM.tmp.D)
+    expβμ = fermilevel(λ, N)
+    βμN = N * log(expβμ)
+    for i in 1:Ns
+        ρ.expiφμ[i] = expiφ[i] / expβμ
+    end
 
-    computeTwoBody || return DM
+    λ = λ / expβμ
+    for m in 1:Ns
+        Z̃ₘ[m] = sum(log.(1 .+ expiφ[m]*λ)) + βμN - N*ρ.iφ[m]
+    end
 
-    # Two-body elements
-    second_order_corr(λ, ni, ninj = DM.tmp.ninj)
-    compute_P(P, invP, P1 = DM.tmp.P1, P2 = DM.tmp.P2)
-    fill_Dt!(
-        ni, DM.tmp.ninj, 
-        P, invP, 
-        Dt = DM.tmp.D, 
-        P1 = DM.tmp.P1, P2 = DM.tmp.P2
-    )
-
-    isReal ? copyto!(DM.Dt, real(DM.tmp.D)) : copyto!(DM.Dt, DM.tmp.D)
-    
-    return DM
+    return Z̃ₘ
 end
 
-function compute_P(
-    P::AbstractMatrix{T}, invP::AbstractMatrix{T};
-    L = size(P),
-    P1 = zeros(T, L[2], L[2], L[1], L[1]),
-    P2 = zeros(T, L[2], L[2], L[1], L[1]),
-    tmpP = zeros(T, L[2], L[1], L[1])
-) where {T<:Number}
-    """
-    Compute the transformation matrices
-    """
-    @inbounds for i = 1 : L[1]
-        for j = 1 : L[1]
-            for α = 1 : L[2]
-                tmpP[α, j, i] = P[i, α] * invP[α, j]
-            end
+function compute_RDM(ρ::DensityMatrix, ws::LDRWorkspace)
+
+    Ns = ρ.Nft
+    ρₘ = ρ.ρₘ
+
+    t = ρ.t[]
+    λ = @view ρ.λ[t]
+    P = @view ρ.P[:, t]
+    P⁻¹ = @view ρ.P⁻¹[t, :]
+    expiφμ = ρ.expiφμ
+
+    for m in 1 : Ns
+        nₖφₘ = @view ws.M[t, 1]
+        @inbounds for i in eachindex(λ)
+            nₖφₘ[i] = expiφμ[m]*λ[i] / (1 + expiφμ[m]*λ[i])
         end
+
+        nₖP⁻¹ = @view ws.M′[t, :]
+        mul!(nₖP⁻¹, Diagonal(nₖφₘ), P⁻¹)
+        Gₐ = @views ρₘ[:, :, m]
+        mul!(Gₐ, P, nₖP⁻¹)
     end
 
-    @inbounds for i = 1 : L[1]
-        for j = 1 : L[1]
-            for α = 1 : L[2]
-                for β = 1 : α
-                    P1[β, α, j, i] = tmpP[α, i, i] * tmpP[β, j, j]
-                    P2[β, α, j, i] = tmpP[α, i, j] * tmpP[β, j, i]
-                end
-            end
-        end
-    end
+    # permute the dimensions
+    Gₘ = ρ.Gₘ
+    permutedims!(Gₘ, ρₘ, [3, 1, 2])
 
-    return P1, P2
+    return ρₘ
 end
 
-function fill_Dt!(
-    ni::AbstractVector{Tn}, ninj::AbstractMatrix{Tn}, 
-    P::AbstractMatrix{Tp}, invP::AbstractMatrix{Tp};
-    L = size(P), Dt = zeros(Tn, L[1], L[1]),
-    P1 = zeros(Tp, L[2], L[2], L[1], L[1]),
-    P2 = zeros(Tp, L[2], L[2], L[1], L[1])
-) where {Tn<:Number, Tp<:Number}
-    """
-    Compute the elements of the two-body density matrix
-    """
-    compute_P(P, invP, P1 = P1, P2 = P2)
+"""
+    update!(system::System, walker::Walker, ρ::DensityMatrix, spin::Int)
 
-    @inbounds for i = 1 : L[1]
-        for j = i : L[1]
-            s = 0
-            for α = 1 : L[2]
-                for β = 1 : L[2]
-                    s += (P1[β, α, j, i] - P2[β, α, j, i]) * ninj[β, α]
-                    s += P2[β, α, j, i] * ni[α]
-                end
-            end
-            Dt[j, i] = s
-            Dt[i, j] = s
-        end
+    Perform the eigendecomposition and write it into ρ
+"""
+function update!(
+    system::System, walker::Walker{T, LDR{T,E}}, ρ::DensityMatrix, spin::Int
+) where {T,E}
+    # compute eigendecomposition
+    λ, P, P⁻¹ = eigen(walker.F[spin], ρ.ws)
+    copyto!(ρ.λ, λ)
+    copyto!(ρ.P, P)
+    copyto!(ρ.P⁻¹, P⁻¹)
+
+    # compute Fourier coefficients
+    compute_Fourier_weights(system, ρ, spin)
+    Z̃ₘ = ρ.Z̃ₘ
+    logZ = walker.weight[spin] + log(walker.sign[spin])
+    for m in eachindex(Z̃ₘ)
+        Z̃ₘ[m] = exp(Z̃ₘ[m] - logZ)
     end
 
-    return Dt
+    # compute frequency-dependent 1-RDMs
+    compute_RDM(ρ, ρ.ws)
+
+    # compute 1-RDM using inverse Fourier transform
+    ρ₁ = ρ.ρ₁
+    Gₘ = ρ.Gₘ
+    for i in eachindex(IndexCartesian(), ρ₁)
+        tmp = sum(Gₘ[:, i[1], i[2]] .* Z̃ₘ) / ρ.Nft
+        ρ₁[i] = T <: Real ? real(tmp) : tmp
+    end
+
+    return nothing
 end
 
-### GCE Density Matrices ###
-function fill_DM!(DM::DensityMatrices{T, Tn, Tp}, G::AbstractMatrix{T}) where {T<:Number, Tn, Tp}
-    Ns = size(G)[1]
+function update!(
+    system::System, walker::Walker{T, LDRLowRank{T,E}}, ρ::DensityMatrix, spin::Int
+) where {T,E}
+    # compute eigendecomposition
+    λ, P, P⁻¹ = eigen(walker.F[spin], ρ.ws)
+    ρ.t[] = walker.F[spin].t[]
+    t = ρ.t[]
+    @views copyto!(ρ.λ[t], λ)
+    @views copyto!(ρ.P[:, t], P)
+    @views copyto!(ρ.P⁻¹[t, :], P⁻¹)
 
-    # One-body
-    copyto!(DM.Do, I - adjoint(G))
-
-    # Two-body, Wick's theorem
-    # <a_i^+ a_j a_k^+ a_l> = <a_i^+ a_j><a_k^+ a_l> + <a_i^+ a_l>(δ_{kj} - <a_k^+ a_j>)
-    Do = DM.Do
-    Dt = DM.Dt
-    @inbounds for j in 1 : Ns
-        for i in j : Ns
-            Dt[i, j] = Do[i, i] * Do[j, j] + Do[i, j] * ((i == j) - Do[j, i])
-            Dt[j, i] = Dt[i, j]
-        end
+    # compute frequency-dependent 1-RDMs
+    compute_Fourier_weights(system, ρ, spin)
+    Z̃ₘ = ρ.Z̃ₘ
+    logZ = walker.weight[spin] + log(walker.sign[spin])
+    for m in eachindex(Z̃ₘ)
+        Z̃ₘ[m] = exp(Z̃ₘ[m] - logZ)
     end
 
-    return DM
+    # compute frequency-dependent 1-RDMs
+    compute_RDM(ρ, ρ.ws)
+
+    # compute 1-RDM using inverse Fourier transform
+    ρ₁ = ρ.ρ₁
+    Gₘ = ρ.Gₘ
+    for i in eachindex(IndexCartesian(), ρ₁)
+        tmp = sum(Gₘ[:, i[1], i[2]] .* Z̃ₘ) / ρ.Nft
+        ρ₁[i] = T <: Real ? real(tmp) : tmp
+    end
+
+    return nothing
+end
+
+function update!(system::System, walker::Walker, ρ₋::DensityMatrix, ρ₊::DensityMatrix)
+    ## update the eigendecomposition ##
+    copyto!(ρ₋.λ, ρ₊.λ)
+    conj!(ρ₋.λ)
+    # update eigenvectors
+    copyto!(ρ₋.P, ρ₊.P)
+    conj!(ρ₋.P)
+    copyto!(ρ₋.P⁻¹, ρ₊.P⁻¹)
+    conj!(ρ₋.P⁻¹)
+    # and the truncation
+    ρ₋.t[] = ρ₊.t[]
+
+    # compute the Fourier weights and frequency-dependent 1-RDMs 
+    # (these are not simply complex conjugates)
+    compute_Fourier_weights(system, ρ₋, 2)
+    Z̃ₘ = ρ₋.Z̃ₘ
+    logZ = walker.weight[2] + log(walker.sign[2])
+    for m in eachindex(Z̃ₘ)
+        Z̃ₘ[m] = exp(Z̃ₘ[m] - logZ)
+    end
+    compute_RDM(ρ₋, ρ₋.ws)
+
+    # update the 1-RDM
+    copyto!(ρ₋.ρ₁, ρ₊.ρ₁)
+    conj!(ρ₋.ρ₁)
+
+    return nothing
+end
+
+"""
+    Compute the two-body estimator <cᵢ⁺ cⱼ cₖ⁺ cₗ>
+"""
+function ρ₂(ρ::DensityMatrix, i::Int, j::Int, k::Int, l::Int)
+    Gₘ = ρ.Gₘ
+    s = 0
+    for m in 1 : ρ.Nft
+        tmp = Gₘ[m, j, i] * Gₘ[m, l, k] + Gₘ[m, l, i] * ((k==j) - Gₘ[m, j, k])
+        s += tmp * ρ.Z̃ₘ[m]
+    end
+
+    return s / ρ.Nft
 end

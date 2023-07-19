@@ -3,10 +3,10 @@ name: CI Test
 on:
   push:
     branches:
-      - master
+      - WIP
   pull_request:
     branches:
-      - master
+      - WIP
 
 jobs:
   build:

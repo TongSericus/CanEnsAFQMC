@@ -13,7 +13,6 @@ module CanEnsAFQMC
     # math functions and canonical ensemble projections
     include("./utils/quickmath.jl")
     include("./utils/ce_recursion.jl")
-    include("./utils/ce_projection.jl")
 
     export LDRLowRank, lowrank_truncation!
     include("./utils/linalg.jl")
@@ -26,6 +25,10 @@ module CanEnsAFQMC
     include("./propagation/metropolis.jl")
 
     # Measurements
+    export DensityMatrix, update!
+    include("./measurements/density_matrix.jl")
+    export CorrFuncSampler, measure_SpinCorr
+    include("./measurements/corr_funcs.jl")
     export PnSampler, measure_Pn
     include("./measurements/prob_dist.jl")
 end

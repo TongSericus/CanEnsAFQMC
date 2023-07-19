@@ -13,9 +13,9 @@ struct LDRLowRank{T<:Number, E<:AbstractFloat} <: Factorization{T}
 end
 
 function lowrank_truncation!(
-    M::LDRLowRank{T,E}; 
-    ws::LDRWorkspace{T,E} = ldr_workspace(M.F)
-) where {T,E}
+    M::LDRLowRank; 
+    ws::LDRWorkspace = ldr_workspace(M.F)
+)
     F = M.F
     N = M.N
     ϵ = M.ϵ
@@ -99,7 +99,7 @@ LinearAlgebra.eigen(S::LDRLowRank) = let
     λ, Pₒ, Pₒ⁻¹
 end
 
-function LinearAlgebra.eigen(S::LDRLowRank{T,E}, ws::LDRWorkspace{T,E}) where {T,E}
+function LinearAlgebra.eigen(S::LDRLowRank, ws::LDRWorkspace)
     F = S.F
     lowrank_truncation!(S, ws=ws)
 
