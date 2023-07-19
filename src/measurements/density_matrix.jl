@@ -113,12 +113,12 @@ function compute_RDM(ρ::DensityMatrix, ws::LDRWorkspace)
 end
 
 """
-    update!(ρ, walker)
+    update!(system::System, walker::Walker, ρ::DensityMatrix, spin::Int)
 
     Perform the eigendecomposition and write it into ρ
 """
 function update!(
-    system::System, ρ::DensityMatrix, walker::Walker{T, LDR{T,E}}, spin::Int
+    system::System, walker::Walker{T, LDR{T,E}}, ρ::DensityMatrix, spin::Int
 ) where {T,E}
     # compute eigendecomposition
     λ, P, P⁻¹ = eigen(walker.F[spin], ρ.ws)
@@ -149,7 +149,7 @@ function update!(
 end
 
 function update!(
-    system::System, ρ::DensityMatrix, walker::Walker{T, LDRLowRank{T,E}}, spin::Int
+    system::System, walker::Walker{T, LDRLowRank{T,E}}, ρ::DensityMatrix, spin::Int
 ) where {T,E}
     # compute eigendecomposition
     λ, P, P⁻¹ = eigen(walker.F[spin], ρ.ws)
@@ -181,10 +181,39 @@ function update!(
     return nothing
 end
 
+function update!(system::System, walker::Walker, ρ₋::DensityMatrix, ρ₊::DensityMatrix)
+    ## update the eigendecomposition ##
+    copyto!(ρ₋.λ, ρ₊.λ)
+    conj!(ρ₋.λ)
+    # update eigenvectors
+    copyto!(ρ₋.P, ρ₊.P)
+    conj!(ρ₋.P)
+    copyto!(ρ₋.P⁻¹, ρ₊.P⁻¹)
+    conj!(ρ₋.P⁻¹)
+    # and the truncation
+    ρ₋.t[] = ρ₊.t[]
+
+    # compute the Fourier weights and frequency-dependent 1-RDMs 
+    # (these are not simply complex conjugates)
+    compute_Fourier_weights(system, ρ₋, 2)
+    Z̃ₘ = ρ₋.Z̃ₘ
+    logZ = walker.weight[2] + log(walker.sign[2])
+    for m in eachindex(Z̃ₘ)
+        Z̃ₘ[m] = exp(Z̃ₘ[m] - logZ)
+    end
+    compute_RDM(ρ₋, ρ₋.ws)
+
+    # update the 1-RDM
+    copyto!(ρ₋.ρ₁, ρ₊.ρ₁)
+    conj!(ρ₋.ρ₁)
+
+    return nothing
+end
+
 """
-    Compute the two-body function <cᵢ⁺ cⱼ cₖ⁺ cₗ>
+    Compute the two-body estimator <cᵢ⁺ cⱼ cₖ⁺ cₗ>
 """
-function two_body_estimator(ρ::DensityMatrix, i::Int, j::Int, k::Int, l::Int)
+function ρ₂(ρ::DensityMatrix, i::Int, j::Int, k::Int, l::Int)
     Gₘ = ρ.Gₘ
     s = 0
     for m in 1 : ρ.Nft

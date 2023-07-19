@@ -92,12 +92,14 @@ end
 function update!(sampler::PnSampler, ρ::DensityMatrix)
     sampler.t[] = ρ.t[]
     t = sampler.t[]
-    @views copyto!(sampler.λ[t], ρ.λ)
-    @views copyto!(sampler.P[:, t], ρ.P)
-    @views copyto!(sampler.P⁻¹[t, :], ρ.P⁻¹)
+    @views copyto!(sampler.λ[t], ρ.λ[t])
+    @views copyto!(sampler.P[:, t], ρ.P[:, t])
+    @views copyto!(sampler.P⁻¹[t, :], ρ.P⁻¹[t, :])
 
     copyto!(sampler.expiφμ, ρ.expiφμ)
     copyto!(sampler.Z̃ₘ, ρ.Z̃ₘ)
+
+    return nothing
 end
 
 """
@@ -208,7 +210,7 @@ function measure_Pn(sampler::PnSampler, ρ::DensityMatrix)
     # update the eigendecomposition
     update!(sampler, ρ)
     # compute frequency-dependent probabilities
-    Pn_estimator(sampler, walker.ws)
+    Pn_estimator(sampler, ρ.ws)
 
     # reverse Fourier transform
     Ns = sampler.Nft
