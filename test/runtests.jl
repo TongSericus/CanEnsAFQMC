@@ -31,7 +31,7 @@ using CanEnsAFQMC, GenericLinearAlgebra, Test
         # stablization interval
         stab_interval=10,
         # use low-rank approximation and set the threshold
-        isLowrank=false, lrThld=1e-8,
+        isLowrank=false, lrThld=1e-10,
         # debugging flag
         saveRatio=true
     )
@@ -43,7 +43,7 @@ using CanEnsAFQMC, GenericLinearAlgebra, Test
         # stablization interval
         stab_interval=10,
         # use low-rank approximation and set the threshold
-        isLowrank=false, lrThld=1e-8,
+        isLowrank=false, lrThld=1e-10,
         # debugging flag
         saveRatio=false
     )
@@ -90,7 +90,7 @@ using CanEnsAFQMC, GenericLinearAlgebra, Test
         # stablization interval
         stab_interval=10,
         # use low-rank approximation and set the threshold
-        isLowrank=true, lrThld=1e-8,
+        isLowrank=true, lrThld=1e-10,
         # debugging flag
         saveRatio=false
     )
@@ -102,7 +102,7 @@ using CanEnsAFQMC, GenericLinearAlgebra, Test
         # stablization interval
         stab_interval=10,
         # use low-rank approximation and set the threshold
-        isLowrank=true, lrThld=1e-8,
+        isLowrank=true, lrThld=1e-10,
         # debugging flag
         saveRatio=true
     )
@@ -186,7 +186,7 @@ end
         # enforce symmetry between two spin sectors
         forceSymmetry=true,
         # use low-rank approximation and set the threshold
-        isLowrank=false, lrThld=1e-8,
+        isLowrank=false, lrThld=1e-6,
         # debugging flag
         saveRatio=false
     )
