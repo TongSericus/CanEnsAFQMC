@@ -25,6 +25,7 @@ struct QMC
     ### MCMC-related ###
     useClusterUpdate::Bool
     cluster_list::Vector{Vector{Int}}
+    num_FourierPoints::Int
     forceSymmetry::Bool
     useHeatbath::Bool
     saveRatio::Bool
@@ -41,6 +42,7 @@ struct QMC
         stab_interval::Int64 = 10,
         useClusterUpdate::Bool = false,
         cluster_list::Vector{Vector{Int}} = [[i] for i in 1:system.V],
+        num_FourierPoints::Int = system.V + 1,
         forceSymmetry::Bool = false,
         isLowrank::Bool = false,
         lrThld::Float64 = 1e-6,
@@ -57,44 +59,11 @@ struct QMC
         return new(
             nwarmups, nsamples, measure_interval,
             stab_interval, K, K_interval,
-            useClusterUpdate, cluster_list,
+            useClusterUpdate, cluster_list, 
+            num_FourierPoints,
             forceSymmetry,
             useHeatbath, saveRatio,
             isLowrank, lrThld
         )
     end
 end
-
-#struct GeneralMeasure
-#    """
-#        Parameters for measuring regular observables
-#    """
-#    ### Momentum distribution constants ###
-#    kpath::Vector{Vector{Float64}}
-#    DFTmats::Vector{Matrix{ComplexF64}}
-#
-#    function GeneralMeasure(
-#        system::System, kpath::Vector{Vector{Float64}}
-#    )
-#        rmat = generate_rmat(system)
-#        DFTmats = generate_DFTmat(kpath, rmat)
-#        return new(kpath, DFTmats)
-#    end
-#end
-#
-#struct EtgMeasure
-#    """
-#        Constants for measuring entanglement entropy
-#
-#        Aidx -> List of site indices in subsystem A
-#        LA -> Size of the subsystem A
-#    """
-#    Aidx::Vector{Vector{Int64}}
-#    LA::Vector{Int64}
-#
-#    function EtgMeasure(Aidx::Vector{Vector{Int64}})
-#        return new(
-#            Aidx, length.(Aidx)
-#        )
-#    end
-#end

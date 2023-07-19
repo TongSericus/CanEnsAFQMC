@@ -27,6 +27,7 @@ struct GenericHubbard{T, Tk} <: Hubbard
     N::Tuple{Int64, Int64}  # spin-up and spin-dn
     T::Tk   # kinetic matrix (can be various forms)
     U::Float64
+    Aidx::Vector{Int}
 
     ### Temperature and Chemical Potential ###
     μ::Float64
@@ -51,6 +52,7 @@ struct GenericHubbard{T, Tk} <: Hubbard
         T::AbstractMatrix, U::Float64,
         μ::Float64, β::Float64, L::Int64;
         sys_type::DataType = ComplexF64,
+        Aidx::Vector{Int} = [1],
         useChargeHST::Bool = false,
         useFirstOrderTrotter::Bool = false
     )
@@ -81,6 +83,7 @@ struct GenericHubbard{T, Tk} <: Hubbard
         return new{sys_type, typeof(Bk)}(
             Ns, V, 
             N, T, U,
+            Aidx,
             μ, β, L,
             useChargeHST, auxfield, V₊, V₋,
             useFirstOrderTrotter,
