@@ -211,13 +211,14 @@ function update!(system::System, walker::Walker, ρ₋::DensityMatrix, ρ₊::De
 end
 
 """
-    Compute the two-body estimator <cᵢ⁺ cⱼ cₖ⁺ cₗ>
+    Compute the two-body estimator <cᵢ⁺ cⱼ cₖ⁺ cₗ> as
+    <cᵢ⁺ cⱼ cₖ⁺ cₗ> = <cᵢ⁺ cⱼ> <cₖ⁺ cₗ> + <cᵢ⁺ cl> (δₖⱼ - <cₖ⁺ cⱼ>)
 """
 function ρ₂(ρ::DensityMatrix, i::Int, j::Int, k::Int, l::Int)
     Gₘ = ρ.Gₘ
     s = 0
     for m in 1 : ρ.Nft
-        tmp = Gₘ[m, j, i] * Gₘ[m, l, k] + Gₘ[m, l, i] * ((k==j) - Gₘ[m, j, k])
+        tmp = Gₘ[m, i, j] * Gₘ[m, k, l] + Gₘ[m, i, l] * ((k==j) - Gₘ[m, k, j])
         s += tmp * ρ.Z̃ₘ[m]
     end
 
