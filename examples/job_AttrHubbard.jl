@@ -9,7 +9,7 @@ include("./qmc_AttrHubbard.jl")
 # extract array ID from the environment
 const worker_id = parse(Int64, get(ENV, "SLURM_ARRAY_TASK_ID", 1))
 # for this specific job, we vary U
-const U_list = [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0]
+const U_list = collect(-1.0:-1.0:-8.0)
 # assign ID to files
 const id = mod(worker_id - 1, length(U_list)) + 1
 const file_id = div(worker_id - 1, length(U_list)) + 1
@@ -33,9 +33,9 @@ const system = GenericHubbard(
     # subsystem indices (if one chooses to measure local distributions)
     Aidx=collect(1:32),
     # data type of the system
-    sys_type=ComplexF64,
+    sys_type=Float64,
     # if use charge decomposition
-    useChargeHST=false,
+    useChargeHST=true,
     # if use first-order Trotteriaztion
     useFirstOrderTrotter=false
 )
@@ -91,9 +91,9 @@ const system = GenericHubbard(
 
 if abs(system.U) <= 2.0
     c = 16
-elseif 2.0 < abs(system.U) <= 4.0
+elseif 2.0 < abs(system.U) <= 6.0
     c = 8
-elseif abs(system.U) > 4.0
+elseif abs(system.U) > 6.0
     c = 4
 end
 const qmc = QMC(
@@ -111,7 +111,7 @@ const qmc = QMC(
     # enforce symmetry between two spin sectors
     forceSymmetry=true,
     # use low-rank approximation and set the threshold
-    isLowrank=true, lrThld=1e-4,
+    isLowrank=true, lrThld=1e-10,
     # debugging flag
     saveRatio=false
 )
