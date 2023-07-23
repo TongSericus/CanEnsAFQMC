@@ -182,14 +182,16 @@ function update!(
 end
 
 function update!(system::System, walker::Walker, ρ₋::DensityMatrix, ρ₊::DensityMatrix)
+    isConj = !system.useChargeHST
+
     ## update the eigendecomposition ##
     copyto!(ρ₋.λ, ρ₊.λ)
-    conj!(ρ₋.λ)
+    isConj && conj!(ρ₋.λ)
     # update eigenvectors
     copyto!(ρ₋.P, ρ₊.P)
-    conj!(ρ₋.P)
+    isConj && conj!(ρ₋.P)
     copyto!(ρ₋.P⁻¹, ρ₊.P⁻¹)
-    conj!(ρ₋.P⁻¹)
+    isConj && conj!(ρ₋.P⁻¹)
     # and the truncation
     ρ₋.t[] = ρ₊.t[]
 
@@ -205,7 +207,7 @@ function update!(system::System, walker::Walker, ρ₋::DensityMatrix, ρ₊::De
 
     # update the 1-RDM
     copyto!(ρ₋.ρ₁, ρ₊.ρ₁)
-    conj!(ρ₋.ρ₁)
+    isConj && conj!(ρ₋.ρ₁)
 
     return nothing
 end

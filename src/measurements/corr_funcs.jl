@@ -1,5 +1,5 @@
 """
-    Charge Correlation Function and the corresponding Fourier Transform (Structural Factor)
+    Correlation function measurements
 """
 
 struct CorrFuncSampler
@@ -85,14 +85,17 @@ function measure_SpinCorr(
     ρ₁₊ = ρ₊.ρ₁
     ρ₁₋ = ρ₋.ρ₁
     Sᵢ₊ᵣSᵢ = sampler.Sᵢ₊ᵣSᵢ
+    Sˣᵢ₊ᵣSˣᵢ = sampler.Sˣᵢ₊ᵣSˣᵢ
 
     Ns⁻¹ = 1 / length(sampler.ipδr[:, 1])
     @inbounds for n in 1:length(sampler.δr)
         for (i,ipδr) in enumerate(@view sampler.ipδr[:, n])
                 Sᵢ₊ᵣSᵢ[n, s] += ρ₂(ρ₊, ipδr, ipδr, i, i) + ρ₂(ρ₋, ipδr, ipδr, i, i) - 
                                 ρ₁₊[ipδr, ipδr] * ρ₁₋[i, i] - ρ₁₊[i, i] * ρ₁₋[ipδr, ipδr]
+                Sˣᵢ₊ᵣSˣᵢ[n, s] += (1 - ρ₁₊[i, ipδr]) * (1 - ρ₁₋[ipδr, i])
         end
         Sᵢ₊ᵣSᵢ[n, s] *= Ns⁻¹
+        Sˣᵢ₊ᵣSˣᵢ[n, s] *= Ns⁻¹
     end
 
     addCount && (sampler.s_counter[] += 1)
