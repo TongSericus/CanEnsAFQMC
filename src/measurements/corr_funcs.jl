@@ -15,7 +15,10 @@ struct CorrFuncSampler
     # charge correlation
     nᵢ₊ᵣnᵢ::Matrix{ComplexF64}
     # spin correlation
+    # z-direction spin-spin correlation
     Sᵢ₊ᵣSᵢ::Matrix{ComplexF64}
+    # x/y-direction spin-spin correlation
+    Sˣᵢ₊ᵣSˣᵢ::Matrix{ComplexF64}
 end
 
 function CorrFuncSampler(system::System, qmc::QMC; nsamples::Int = qmc.nsamples)
@@ -38,8 +41,9 @@ function CorrFuncSampler(system::System, qmc::QMC; nsamples::Int = qmc.nsamples)
 
     nᵢ₊ᵣnᵢ = zeros(ComplexF64, length(δr), nsamples)
     Sᵢ₊ᵣSᵢ = zeros(ComplexF64, length(δr), nsamples)
+    Sˣᵢ₊ᵣSˣᵢ = zeros(ComplexF64, length(δr), nsamples)
 
-    return CorrFuncSampler(Ref(1), δr, ipδr, nᵢ₊ᵣnᵢ, Sᵢ₊ᵣSᵢ)
+    return CorrFuncSampler(Ref(1), δr, ipδr, nᵢ₊ᵣnᵢ, Sᵢ₊ᵣSᵢ, Sˣᵢ₊ᵣSˣᵢ)
 end
 
 """
