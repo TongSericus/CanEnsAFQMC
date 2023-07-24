@@ -24,7 +24,8 @@ struct QMC
 
     ### MCMC-related ###
     useClusterUpdate::Bool
-    cluster_list::Vector{Vector{Int}}
+    cluster_size::Int
+    cluster_list::Base.RefValue{Vector{Vector{Int}}}
     num_FourierPoints::Int
     forceSymmetry::Bool
     useHeatbath::Bool
@@ -41,7 +42,7 @@ struct QMC
         measure_interval::Int64 = 1,
         stab_interval::Int64 = 10,
         useClusterUpdate::Bool = false,
-        cluster_list::Vector{Vector{Int}} = [[i] for i in 1:system.V],
+        cluster_size::Int = 1,
         num_FourierPoints::Int = system.V + 1,
         forceSymmetry::Bool = false,
         isLowrank::Bool = false,
@@ -56,14 +57,24 @@ struct QMC
         K_interval = [stab_interval for _ in 1 : K]
         Le == 0 || (K_interval[end] = Le)
 
+        # generate a random cluster list
+        Ns = system.V
+        cluster_list = partition_cluster(randperm(Ns), cluster_size)
         return new(
             nwarmups, nsamples, measure_interval,
             stab_interval, K, K_interval,
-            useClusterUpdate, cluster_list, 
+            useClusterUpdate, cluster_size, Ref(cluster_list),
             num_FourierPoints,
             forceSymmetry,
             useHeatbath, saveRatio,
             isLowrank, lrThld
         )
     end
+end
+
+function partition_cluster(cluster::AbstractVector{Int}, cluster_size::Int)
+    c = cluster_size
+    L = length(cluster)
+    mod(L, c) == 0 && return [cluster[c*(i-1)+1:c*i] for i in 1:div(L,c)]
+    return vcat([cluster[c*(i-1)+1:c*i] for i in 1:div(L,c)], [cluster[c*div(L,c)+1:end]])
 end

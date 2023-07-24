@@ -26,7 +26,7 @@ function qmc_run_AttrHubbard(system::System, qmc::QMC, path::String, filename::S
 
         # update density matrix
         update!(system, walker, ρ₊, 1)
-        update!(system, walker, ρ₋, 2)
+        update!(system, walker, ρ₋, ρ₊)
 
         # measure correlation functions
         measure_ChargeCorr(corr_sampler, ρ₊, ρ₋)

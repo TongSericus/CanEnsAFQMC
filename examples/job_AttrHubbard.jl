@@ -90,11 +90,11 @@ const system = GenericHubbard(
 """
 
 if abs(system.U) <= 2.0
-    c = 16
-elseif 2.0 < abs(system.U) <= 6.0
     c = 8
-elseif abs(system.U) > 6.0
+elseif 2.0 < abs(system.U) <= 6.0
     c = 4
+elseif abs(system.U) > 6.0
+    c = 3
 end
 const qmc = QMC(
     system,
@@ -105,7 +105,7 @@ const qmc = QMC(
     # use cluster update, i.e., flipping multiple spins instead of a single spin in every Metropolis test
     useClusterUpdate=true,
     # indices of lattice sites being simultaneously flipped
-    cluster_list=[collect(c*(i-1)+1:c*i) for i in 1:div(system.V,c)],
+    cluster_size=c,
     # number of Fourier points used in measurements
     num_FourierPoints=15,
     # enforce symmetry between two spin sectors

@@ -3,16 +3,24 @@
 """
 
 function sweep!(system::System, qmc::QMC, walker::Walker; loop_number::Int = 1)
+    useClusterUpdate = qmc.useClusterUpdate
+    cluster_list = qmc.cluster_list
+    cluster_size = qmc.cluster_size
+
     if system.useChargeHST || qmc.forceSymmetry # charge decomposition
         for i in 1 : loop_number
+            useClusterUpdate && (cluster_list[] = partition_cluster(randperm(system.V), cluster_size))
             sweep!_symmetric(system, qmc, walker, direction=1)
+            useClusterUpdate && (cluster_list[] = partition_cluster(randperm(system.V), cluster_size))
             sweep!_symmetric(system, qmc, walker, direction=2)
         end
 
         return nothing
     else                                        # spin decomposition
         for i in 1 : loop_number
+            useClusterUpdate && (cluster_list[] = partition_cluster(randperm(system.V), cluster_size))
             sweep!_asymmetric(system, qmc, walker, direction=1)
+            useClusterUpdate && (cluster_list[] = partition_cluster(randperm(system.V), cluster_size))
             sweep!_asymmetric(system, qmc, walker, direction=2)
         end
 
@@ -75,7 +83,7 @@ function cluster_flip!(
     M = walker.FM[1]
     Bτ = walker.Bτ.B[1]
 
-    for i in qmc.cluster_list
+    for i in qmc.cluster_list[]
         σ_flip = 2 * (rand(length(i)) .< 0.5) .- 1
         @views @. σ[i] *= σ_flip
 
@@ -343,7 +351,7 @@ function cluster_flip!(
     M = walker.FM
     Bτ = walker.Bτ.B
 
-    for i in qmc.cluster_list
+    for i in qmc.cluster_list[]
         σ_flip = 2 * (rand(length(i)) .< 0.5) .- 1
         @views @. σ[i] *= σ_flip
 
