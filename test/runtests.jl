@@ -318,7 +318,7 @@ BigMatrix(A::LDR) = big.(A.L) * Diagonal(big.(A.d)) * big.(A.R)
         # use cluster update
         useClusterUpdate=true,
         # indices of lattice sites being simultaneously flipped
-        cluster_list=[collect(36*(i-1)+1:36*i) for i in 1:div(system.V,36)],
+        cluster_size=4,
         # enforce symmetry between two spin sectors
         forceSymmetry=true,
         # use low-rank approximation and set the threshold
