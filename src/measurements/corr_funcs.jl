@@ -19,6 +19,10 @@ struct CorrFuncSampler
     Sᵢ₊ᵣSᵢ::Matrix{ComplexF64}
     # x/y-direction spin-spin correlation
     Sˣᵢ₊ᵣSˣᵢ::Matrix{ComplexF64}
+    # single-pair correlation (it is averaged over nᵢ₊ᵣꜛnᵢꜜ and nᵢ₊ᵣꜜnᵢꜛ)
+    nᵢ₊ᵣꜛnᵢꜜ::Matrix{ComplexF64}
+    # pair correlation
+    Pₛ::Matrix{ComplexF64}
 end
 
 function CorrFuncSampler(system::System, qmc::QMC; nsamples::Int = qmc.nsamples)
@@ -42,8 +46,10 @@ function CorrFuncSampler(system::System, qmc::QMC; nsamples::Int = qmc.nsamples)
     nᵢ₊ᵣnᵢ = zeros(ComplexF64, length(δr), nsamples)
     Sᵢ₊ᵣSᵢ = zeros(ComplexF64, length(δr), nsamples)
     Sˣᵢ₊ᵣSˣᵢ = zeros(ComplexF64, length(δr), nsamples)
+    nᵢ₊ᵣꜛnᵢꜜ = zeros(ComplexF64, length(δr), nsamples)
+    Pₛ = zeros(ComplexF64, length(δr), nsamples)
 
-    return CorrFuncSampler(Ref(1), δr, ipδr, nᵢ₊ᵣnᵢ, Sᵢ₊ᵣSᵢ, Sˣᵢ₊ᵣSˣᵢ)
+    return CorrFuncSampler(Ref(1), δr, ipδr, nᵢ₊ᵣnᵢ, Sᵢ₊ᵣSᵢ, Sˣᵢ₊ᵣSˣᵢ, nᵢ₊ᵣꜛnᵢꜜ, Pₛ)
 end
 
 """
@@ -100,6 +106,40 @@ function measure_SpinCorr(
         end
         Sᵢ₊ᵣSᵢ[n, s] *= Ns⁻¹
         Sˣᵢ₊ᵣSˣᵢ[n, s] *= Ns⁻¹
+    end
+
+    addCount && (sampler.s_counter[] += 1)
+
+    return nothing
+end
+
+"""
+    measure_PairCorr(system::System)
+
+    Compute the single pair correlation
+    ⟨Sᵢ₊ᵣSᵢ⟩ = N⁻¹∑ᵢ⟨(nᵢ₊ᵣ↑-nᵢ₊ᵣ↓)(nᵢ↑-nᵢ↓)⟩
+
+    and the s-wave pair correlation
+    Pₛ(i+r, i) = ⟨c⁺ᵢ₊ᵣ↑c⁺ᵢ₊ᵣ↓cᵢ↓cᵢ↑ + c⁺ᵢ↑c⁺ᵢ↓cᵢ₊ᵣ↓cᵢ₊ᵣ↑⟩ = ρꜛᵢ₊ᵣ,ᵢρ↓ᵢ₊ᵣ,ᵢ + ρꜛᵢ,ᵢ₊ᵣρ↓ᵢ,ᵢ₊ᵣ
+"""
+function measure_PairCorr(
+    sampler::CorrFuncSampler, ρ₊::DensityMatrix, ρ₋::DensityMatrix;
+    addCount::Bool = false
+)
+    s = sampler.s_counter[]
+    ρ₁₊ = ρ₊.ρ₁
+    ρ₁₋ = ρ₋.ρ₁
+    nᵢ₊ᵣꜛnᵢꜜ = sampler.nᵢ₊ᵣꜛnᵢꜜ
+    Pₛ = sampler.Pₛ
+
+    Ns⁻¹ = 1 / length(sampler.ipδr[:, 1])
+    @inbounds for n in 1:length(sampler.δr)
+        for (i,ipδr) in enumerate(@view sampler.ipδr[:, n])
+            nᵢ₊ᵣꜛnᵢꜜ[n, s] += (ρ₁₊[ipδr, ipδr]*ρ₁₋[i, i] + ρ₁₋[ipδr, ipδr]*ρ₁₊[i, i]) / 2
+            Pₛ[n, s] += ρ₁₊[ipδr, i]*ρ₁₋[ipδr, i] + ρ₁₊[i, ipδr]*ρ₁₋[i, ipδr]
+        end
+        nᵢ₊ᵣꜛnᵢꜜ[n, s] *= Ns⁻¹
+        Pₛ[n, s] *= Ns⁻¹
     end
 
     addCount && (sampler.s_counter[] += 1)

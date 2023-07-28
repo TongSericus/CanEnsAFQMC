@@ -27,7 +27,7 @@ module CanEnsAFQMC
     # Measurements
     export DensityMatrix, update!
     include("./measurements/density_matrix.jl")
-    export CorrFuncSampler, measure_ChargeCorr, measure_SpinCorr
+    export CorrFuncSampler, measure_ChargeCorr, measure_SpinCorr, measure_PairCorr
     include("./measurements/corr_funcs.jl")
     export PnSampler, measure_Pn
     include("./measurements/prob_dist.jl")
